@@ -1,4 +1,9 @@
 # Naveen BOM Lens
+---
+
+## 📢 Notice
+This project is shared publicly for demonstration purposes only.  
+All rights reserved. No part of the code may be copied, reused, or redistributed without explicit permission from the author.
 
 A simple BOM viewer built with:
 - **Backend**: Python Flask
