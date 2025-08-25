@@ -1,3 +1,5 @@
+Last updated: August 25, 2025
+
 # Naveen BOM Lens
 ---
 
