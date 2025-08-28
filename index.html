@@ -13,6 +13,7 @@
         body {
             font-family: 'Inter', sans-serif;
             background-color: #f3f4f6;
+            overflow-x: hidden; /* Prevent horizontal scrollbar */
         }
         .modal { display: none; }
         .modal:not(.hidden) { display: block; }
@@ -32,173 +33,167 @@
             word-wrap: break-word;
             font-family: monospace;
         }
+        /* --- Sidebar Styles --- */
+        #sidebar {
+            width: 48px; /* Collapsed width: w-12 */
+            transition: width 0.3s ease-in-out;
+            overflow-x: hidden;
+            padding: 7px 6px 6px 6px; /* 7px top padding, 6px on other sides */
+        }
+        #sidebar.expanded {
+            width: 168px; /* Expanded width */
+        }
+        #sidebar-content {
+            white-space: nowrap; /* Prevent content wrapping during transition */
+        }
+        #main-content {
+            margin-left: 48px; /* Match collapsed sidebar width */
+            transition: margin-left 0.3s ease-in-out;
+        }
+        #main-content.expanded {
+            margin-left: 168px; /* Match expanded sidebar width */
+        }
+        /* --- Logo Styles --- */
+        #sidebar #logo-full { display: none; }
+        #sidebar #logo-short { display: block; }
+        #sidebar.expanded #logo-full { display: block; }
+        #sidebar.expanded #logo-short { display: none; }
+        #logo-container {
+            display: flex;
+            align-items: center;
+            justify-content: center; /* Default for collapsed state */
+        }
+        #sidebar.expanded #logo-container {
+            justify-content: flex-start; /* For expanded state */
+        }
+        /* --- New Sidebar Option Styles --- */
+        #sidebar:not(.expanded) .option-text {
+            display: none;
+        }
+        #sidebar:not(.expanded) ul li {
+            justify-content: center;
+        }
+        #sidebar:not(.expanded) ul li img {
+            margin-right: 0;
+        }
     </style>
 </head>
-<body class="bg-gray-100 p-8">
+<body class="bg-gray-100">
 
-    <div id="dashboard-section">
-        <header class="mb-4">
-            <h1 class="text-2xl font-bold text-gray-800">Supply Chain Resilience Dashboard</h1>
-        </header>
-
-        <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-4">
-            <div class="bg-white rounded-xl shadow-lg p-4 hover:shadow-2xl transition-shadow duration-300">
-                <h3 class="text-sm font-medium text-gray-500 uppercase">Total Demand at Risk</h3>
-                <p id="total-demand-at-risk" class="mt-1 text-2xl font-bold text-red-600">$0</p>
-            </div>
-
-            <div class="bg-white rounded-xl shadow-lg p-4 hover:shadow-2xl transition-shadow duration-300">
-                <h3 class="text-sm font-medium text-gray-500 uppercase">Affected Orders</h3>
-                <p id="affected-orders" class="mt-1 text-2xl font-bold text-red-600">0</p>
-            </div>
-
-            <div id="broken-networks-card" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
-                <h3 class="text-sm font-medium text-gray-500 uppercase">Broken Networks</h3>
-                <p id="broken-networks" class="mt-1 text-2xl font-bold text-orange-500">0</p>
-            </div>
-
-            <div id="bottlenecks-card" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
-                <h3 class="text-sm font-medium text-gray-500 uppercase">Bottlenecks</h3>
-                <p id="bottlenecks-count" class="mt-1 text-2xl font-bold text-yellow-500">0</p>
-            </div>
-            
-            <div id="bom-viewer-card" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
-                <div class="flex items-center justify-between">
-                    <h3 class="text-sm font-medium text-gray-500 uppercase">BOM Viewer</h3>
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                </div>
-                <p class="mt-1 text-sm text-gray-600">Explore BOMs.</p>
-            </div>
-        </section>
-    </div>
-
-    <div id="bottlenecks-subcards-section" class="hidden pt-4">
-        <div class="max-w-2xl">
-            <section class="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-4">
-                <div id="bottleneck-resources-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
-                    <div class="flex items-baseline justify-between">
-                        <h4 class="text-base font-bold text-cyan-800">Resources</h4>
-                        <span id="bottleneck-resources-count" class="text-lg font-bold text-cyan-800">0</span>
-                    </div>
-                </div>
-                <div id="bottleneck-skus-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
-                    <div class="flex items-baseline justify-between">
-                        <h4 class="text-base font-bold text-indigo-800">SKU</h4>
-                        <span id="bottleneck-skus-count" class="text-lg font-bold text-indigo-800">0</span>
-                    </div>
-                </div>
-            </section>
+    <div id="sidebar" class="fixed top-0 left-0 h-full bg-gray-200 text-gray-800 z-20">
+        <div id="logo-container" class="mb-4">
+            <img id="logo-full" src="images/ElevaAI_full_logo.svg" alt="Eleva AI Full Logo" class="w-28 cursor-pointer">
+            <img id="logo-short" src="images/ElevaAI_short_logo.svg" alt="Eleva AI Short Logo" class="w-7 cursor-pointer">
         </div>
-    </div>
-
-    <div id="bom-viewer-subcards-section" class="hidden pt-4">
-        <div class="max-w-2xl">
-            <section class="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-4">
-                <div id="sfg-sku-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
-                    <h4 class="text-base font-bold text-green-800">SFG SKU</h4>
-                </div>
-                <div id="fg-sku-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
-                    <h4 class="text-base font-bold text-purple-800">FG SKU</h4>
-                </div>
-                <div id="enter-sku-details-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
-                    <h4 class="text-base font-bold text-gray-700">Enter SKU Details</h4>
-                </div>
-            </section>
-        </div>
-    </div>
-
-    <div id="broken-networks-section" class="hidden pt-4">
-        <div class="max-w-2xl">
-            <section class="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-4">
-                <div id="broken-sku-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
-                    <div class="flex items-baseline justify-between">
-                        <h4 class="text-base font-bold text-blue-800">Broken SKU</h4>
-                        <span id="broken-skus-count" class="text-lg font-bold text-blue-800">0</span>
-                    </div>
-                </div>
-                <div id="broken-demand-network-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
-                    <div class="flex items-baseline justify-between">
-                        <h4 class="text-base font-bold text-red-800">Broken FG</h4>
-                        <span id="broken-fg-networks-count" class="text-lg font-bold text-red-800">0</span>
-                    </div>
-                </div>
-            </section>
-        </div>
-    </div>
-    
-    <div id="sku-input-section" class="hidden pt-4">
-        <div class="max-w-2xl bg-white rounded-xl shadow-lg p-4">
-            <h3 class="text-base font-semibold text-gray-800 mb-3">Get Network by Item and Location</h3>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <input type="text" id="item-input" placeholder="Enter Item" class="w-full px-3 py-1 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                <input type="text" id="loc-input" placeholder="Enter Location" class="w-full px-3 py-1 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                <button id="get-network-btn" class="w-full px-4 py-1 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors">Get Network</button>
-            </div>
-        </div>
-    </div>
         
-    <div id="results-container" class="bg-white rounded-xl shadow-lg p-6 hidden mt-4">
+        <div id="sidebar-content">
+            <ul>
+                <li id="dashboard-option" class="flex items-center p-2 hover:bg-gray-300 rounded cursor-pointer text-sm">
+                    <img src="images/Dashboard.png" alt="Dashboard Icon" class="h-4 w-4 mr-3 flex-shrink-0">
+                    <span class="option-text">Dashboard</span>
+                </li>
+                <li id="bom-viewer-option" class="flex items-center p-2 hover:bg-gray-300 rounded cursor-pointer text-sm">
+                    <img src="images/BOM_Viewer.png" alt="BOM Viewer Icon" class="h-4 w-4 mr-3 flex-shrink-0">
+                    <span class="option-text">BOM Viewer</span>
+                </li>
+                <li class="flex items-center p-2 hover:bg-gray-300 rounded cursor-pointer text-sm">
+                    <img src="images/New_Chat.png" alt="New Chat Icon" class="h-4 w-4 mr-3 flex-shrink-0">
+                    <span class="option-text">New Chat</span>
+                </li>
+                <li class="p-2 hover:bg-gray-300 rounded cursor-pointer text-sm">
+                    <span class="option-text">Settings</span>
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    <main id="main-content" class="p-8">
+        <div id="dashboard-section">
+            <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
+                <div class="bg-white rounded-xl shadow-lg p-4 hover:shadow-2xl transition-shadow duration-300">
+                    <h3 class="text-sm font-medium text-gray-500 uppercase">Total Demand at Risk</h3>
+                    <p id="total-demand-at-risk" class="mt-1 text-2xl font-bold text-red-600">$0</p>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-lg p-4 hover:shadow-2xl transition-shadow duration-300">
+                    <h3 class="text-sm font-medium text-gray-500 uppercase">Affected Orders</h3>
+                    <p id="affected-orders" class="mt-1 text-2xl font-bold text-red-600">0</p>
+                </div>
+
+                <div id="broken-networks-card" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
+                    <h3 class="text-sm font-medium text-gray-500 uppercase">Broken Networks</h3>
+                    <p id="broken-networks" class="mt-1 text-2xl font-bold text-orange-500">0</p>
+                </div>
+
+                <div id="bottlenecks-card" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
+                    <h3 class="text-sm font-medium text-gray-500 uppercase">Bottlenecks</h3>
+                    <p id="bottlenecks-count" class="mt-1 text-2xl font-bold text-yellow-500">0</p>
+                </div>
+            </section>
         </div>
 
-    <div id="bom-detail-modal" class="modal fixed inset-0 z-50 overflow-y-auto hidden">
-        <div class="flex items-center justify-center min-h-screen px-4 text-center">
-            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
+        <div id="bottlenecks-subcards-section" class="hidden pt-4">
+            <div class="max-w-2xl">
+                <section class="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-4">
+                    <div id="bottleneck-resources-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
+                        <div class="flex items-baseline justify-between">
+                            <h4 class="text-base font-bold text-cyan-800">Resources</h4>
+                            <span id="bottleneck-resources-count" class="text-lg font-bold text-cyan-800">0</span>
+                        </div>
+                    </div>
+                    <div id="bottleneck-skus-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
+                        <div class="flex items-baseline justify-between">
+                            <h4 class="text-base font-bold text-indigo-800">SKU</h4>
+                            <span id="bottleneck-skus-count" class="text-lg font-bold text-indigo-800">0</span>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <div id="broken-networks-section" class="hidden pt-4">
+            <div class="max-w-2xl">
+                <section class="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-4">
+                    <div id="broken-sku-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
+                        <div class="flex items-baseline justify-between">
+                            <h4 class="text-base font-bold text-blue-800">Broken SKU</h4>
+                            <span id="broken-skus-count" class="text-lg font-bold text-blue-800">0</span>
+                        </div>
+                    </div>
+                    <div id="broken-demand-network-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
+                        <div class="flex items-baseline justify-between">
+                            <h4 class="text-base font-bold text-red-800">Broken FG</h4>
+                            <span id="broken-fg-networks-count" class="text-lg font-bold text-red-800">0</span>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+        
+        <div id="bom-viewer-wrapper" class="hidden w-full max-w-7xl mx-auto flex flex-col items-center pt-2">
+            <div id="sku-input-section">
+                <div class="grid grid-cols-1 md:grid-cols-1 gap-6">
+                    <div class="bg-white rounded-xl shadow-lg p-4">
+                        <div class="flex items-center space-x-2">
+                            <input type="text" id="item-input" placeholder="Enter Item" class="w-60 px-3 py-1 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <input type="text" id="loc-input" placeholder="Enter Location" class="w-60 px-3 py-1 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <button id="get-sku-details-btn" class="px-2 py-1 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex-shrink-0">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
+                                </svg>
+                            </button>
+                            <button id="get-network-btn" disabled class="px-4 py-1 bg-gray-300 text-gray-800 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 flex-shrink-0 whitespace-nowrap">Show Network</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="sku-properties-display" class="hidden bg-white rounded-xl shadow-lg p-4 mt-4 w-full">
+            </div>
+        </div>
             
-            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-                <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                    <div class="sm:flex sm:items-start">
-                        <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-                            <h3 id="bom-detail-title" class="text-lg leading-6 font-medium text-gray-900">BOM Detail</h3>
-                            <div class="mt-2">
-                                <p class="text-sm text-gray-500"><strong>Status:</strong> <span id="bom-detail-status"></span></p>
-                                <p class="text-sm text-gray-500"><strong>Impact:</strong> <span id="bom-detail-impact"></span></p>
-                                <p class="text-sm text-gray-500"><strong>Root Cause:</strong> <span id="bom-detail-root-cause"></span></p>
-                                <p class="text-sm text-gray-500"><strong>Resolution Steps:</strong> <span id="bom-detail-resolution"></span></p>
-                            </div>
-                            <div class="mt-4">
-                                <h4 class="text-md font-semibold text-gray-800">Affected Orders</h4>
-                                <ul id="affected-orders-list" class="list-disc list-inside mt-2 text-sm text-gray-600"></ul>
-                            </div>
-                            <div class="mt-4">
-                                <h4 class="text-md font-semibold text-gray-800">History</h4>
-                                <ul id="bom-history-list" class="list-disc list-inside mt-2 text-sm text-gray-600"></ul>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                    <button type="button" class="close-modal w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 sm:ml-3 sm:w-auto sm:text-sm">
-                        Close
-                    </button>
-                </div>
-            </div>
+        <div id="results-container" class="bg-white rounded-xl shadow-lg p-6 hidden mt-4">
         </div>
-    </div>
-
-    <div id="node-properties-modal" class="modal fixed inset-0 z-50 overflow-y-auto hidden">
-        <div class="flex items-center justify-center min-h-screen px-4 text-center">
-            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true"></div>
-            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-                <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                    <div class="sm:flex sm:items-start">
-                        <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-                            <h3 id="node-properties-title" class="text-lg leading-6 font-medium text-gray-900">Node Properties</h3>
-                            <div class="mt-2" id="node-properties-content">
-                                </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                    <button type="button" class="close-properties-modal w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 sm:ml-3 sm:w-auto sm:text-sm">
-                        Close
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-    
+    </main>
     <script src="main.js"></script>
 </body>
 </html>

@@ -86,6 +86,29 @@ def get_dashboard_data():
         print(f"Error fetching dashboard data: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
+# ## NEW ENDPOINT to check SKU properties before drawing graph ##
+@app.route('/api/sku-details', methods=['POST'])
+def get_sku_details():
+    """
+    Returns the properties for a single SKU.
+    """
+    try:
+        data = request.json
+        sku_id = data.get('sku_id')
+        if not sku_id:
+            return jsonify({'error': 'SKU ID is required.'}), 400
+
+        driver = get_db()
+        with driver.session(database=NEO4J_DATABASE) as session:
+            result = session.run("MATCH (s:SKU {sku_id: $sku_id}) RETURN s", sku_id=sku_id).single()
+            if result:
+                return jsonify({'found': True, 'properties': dict(result['s'])})
+            else:
+                return jsonify({'found': False})
+    except Exception as e:
+        print(f"Error fetching SKU details: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
 # Endpoint to get broken SKUs
 @app.route('/api/broken-networks', methods=['GET'])
 def get_broken_networks():
@@ -221,7 +244,7 @@ def get_broken_demand_networks():
         driver = get_db()
         cypher_query = """
         MATCH (s:SKU)
-        WHERE s.broken_demand_network = true
+        WHERE s.broken_bom = true AND s.demand_sku = true
         RETURN s
         LIMIT 10
         """
@@ -284,55 +307,88 @@ def get_network_graph():
         print(f"Error: {e}")
         return jsonify({'error': 'Internal server error.'}), 500
 
-# Endpoint for Shortest Path
-@app.route('/api/shortest-path', methods=['POST'])
-def get_shortest_path():
+# --- NEW ENDPOINT for combined network and shortest path ---
+@app.route('/api/network-with-shortest-path', methods=['POST'])
+def get_network_with_shortest_path():
     """
-    Finds and returns the shortest, valid upstream supply path for a given demand SKU.
+    Fetches the full network and the shortest path for a given SKU in one call.
     """
     try:
         data = request.json
         sku_id = data.get('sku_id')
-        print(f"Received SKU ID for SHORTEST PATH search: '{sku_id}'")
         if not sku_id:
             return jsonify({'error': 'SKU ID is required.'}), 400
 
-        cypher_query = """
-        MATCH (d:SKU {sku_id: $sku_id})
-        WHERE d.demand_sku = true AND coalesce(d.broken_bom,false) = false
-        MATCH path = (srcNode)-[:CONSUMED_BY|PRODUCES|SOURCING|PURCH_FROM*1..50]->(d)
-        WHERE (srcNode:PurchGroup OR (srcNode:SKU AND coalesce(srcNode.infinite_supply,false) = true))
-          AND NONE(n IN nodes(path) WHERE coalesce(n.broken_bom,false) = true)
-        WITH d, path, head(nodes(path)) AS sourceNode,
-             reduce(totalLT = 0, r IN relationships(path) | totalLT + coalesce(r.lead_time,0)) AS pathLeadTime
-        WITH d, collect({p:path, src:sourceNode, leadTime:pathLeadTime}) AS allPaths
-        WITH d,
-             [x IN allPaths WHERE x.src:PurchGroup] AS purchPaths,
-             [x IN allPaths WHERE NOT x.src:PurchGroup] AS skuPaths
-        WITH d,
-             CASE WHEN size(purchPaths) > 0 THEN purchPaths ELSE skuPaths END AS candidatePaths
-        UNWIND candidatePaths AS cp
-        WITH d, cp
-        ORDER BY cp.leadTime ASC
-        WITH d, collect(cp)[0] AS chosenPath
-        WITH chosenPath, [n IN nodes(chosenPath.p) WHERE n:BOM] AS bomNodes
-        UNWIND bomNodes AS bn
-        OPTIONAL MATCH rp = (res:Res)-[:USES_RESOURCE]->(bn)
-        WITH chosenPath, [p IN collect(DISTINCT rp) WHERE p IS NOT NULL] AS resPaths
-        WITH resPaths + [chosenPath.p] AS allPaths
-        UNWIND allPaths AS path
-        RETURN path;
-        """
         driver = get_db()
         with driver.session(database=NEO4J_DATABASE) as session:
-            result = session.run(cypher_query, sku_id=sku_id)
-            paths = [row['path'] for row in result]
-            serialized_paths = [serialize_path(path) for path in paths]
-            return jsonify(serialized_paths)
+            # 1. Get Full Network
+            full_network_query = """
+            MATCH (s:SKU {sku_id: $sku_id})
+            CALL(s) {
+              WITH s
+              OPTIONAL MATCH up = (u)-[:SOURCING|PRODUCES|CONSUMED_BY|PURCH_FROM*0..]->(s)
+              RETURN collect(DISTINCT up) AS ups
+            }
+            CALL(s) {
+              WITH s
+              OPTIONAL MATCH down = (s)-[:SOURCING|PRODUCES|CONSUMED_BY|PURCH_FROM*0..]->(d)
+              RETURN collect(DISTINCT down) AS downs
+            }
+            WITH s, [p IN ups WHERE p IS NOT NULL] + [p IN downs WHERE p IS NOT NULL] AS netPaths
+            UNWIND netPaths AS p
+            UNWIND nodes(p) AS n
+            WITH s, collect(DISTINCT p) AS allPaths, collect(DISTINCT n) AS nodesInNet
+            WITH allPaths, [n IN nodesInNet WHERE n:BOM] AS bomNodes
+            UNWIND bomNodes AS bn
+            OPTIONAL MATCH rp = (res:Res)-[:USES_RESOURCE]->(bn)
+            WITH allPaths, collect(DISTINCT rp) AS resPaths
+            WITH [p IN resPaths WHERE p IS NOT NULL] AS resPathsClean, allPaths
+            WITH allPaths + resPathsClean AS combinedPaths
+            UNWIND combinedPaths AS path
+            RETURN path;
+            """
+            full_network_result = session.run(full_network_query, sku_id=sku_id)
+            full_network_paths = [serialize_path(row['path']) for row in full_network_result]
+            
+            # 2. Get Shortest Path
+            shortest_path_query = """
+            MATCH (d:SKU {sku_id: $sku_id})
+            WHERE d.demand_sku = true AND coalesce(d.broken_bom,false) = false
+            MATCH path = (srcNode)-[:CONSUMED_BY|PRODUCES|SOURCING|PURCH_FROM*1..50]->(d)
+            WHERE (srcNode:PurchGroup OR (srcNode:SKU AND coalesce(srcNode.infinite_supply,false) = true))
+              AND NONE(n IN nodes(path) WHERE coalesce(n.broken_bom,false) = true)
+            WITH d, path, head(nodes(path)) AS sourceNode,
+                 reduce(totalLT = 0, r IN relationships(path) | totalLT + coalesce(r.lead_time,0)) AS pathLeadTime
+            WITH d, collect({p:path, src:sourceNode, leadTime:pathLeadTime}) AS allPaths
+            WITH d,
+                 [x IN allPaths WHERE x.src:PurchGroup] AS purchPaths,
+                 [x IN allPaths WHERE NOT x.src:PurchGroup] AS skuPaths
+            WITH d,
+                 CASE WHEN size(purchPaths) > 0 THEN purchPaths ELSE skuPaths END AS candidatePaths
+            UNWIND candidatePaths AS cp
+            WITH d, cp
+            ORDER BY cp.leadTime ASC
+            WITH d, collect(cp)[0] AS chosenPath
+            WITH chosenPath, [n IN nodes(chosenPath.p) WHERE n:BOM] AS bomNodes
+            UNWIND bomNodes AS bn
+            OPTIONAL MATCH rp = (res:Res)-[:USES_RESOURCE]->(bn)
+            WITH chosenPath, [p IN collect(DISTINCT rp) WHERE p IS NOT NULL] AS resPaths
+            WITH resPaths + [chosenPath.p] AS allPaths
+            UNWIND allPaths AS path
+            RETURN path;
+            """
+            shortest_path_result = session.run(shortest_path_query, sku_id=sku_id)
+            shortest_path_paths = [serialize_path(row['path']) for row in shortest_path_result]
+
+        return jsonify({
+            'full_network': full_network_paths,
+            'shortest_path': shortest_path_paths
+        })
 
     except Exception as e:
-        print(f"Error fetching shortest path: {e}")
+        print(f"Error fetching combined network data: {e}")
         return jsonify({'error': 'Internal server error'}), 500
+
 
 # Endpoint for Resource Network
 @app.route('/api/resource-network', methods=['POST'])
