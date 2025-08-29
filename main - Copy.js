@@ -39,15 +39,31 @@ document.addEventListener('DOMContentLoaded', () => {
     // Sidebar Options
     const dashboardOption = document.getElementById('dashboard-option');
     const bomViewerOption = document.getElementById('bom-viewer-option');
+    const newChatOption = document.getElementById('new-chat-option');
 
     // Page Sections
     const dashboardSection = document.getElementById('dashboard-section');
     const bomViewerWrapper = document.getElementById('bom-viewer-wrapper');
+    const chatSection = document.getElementById('chat-section');
     const brokenNetworksSection = document.getElementById('broken-networks-section');
     const bottlenecksSubcardsSection = document.getElementById('bottlenecks-subcards-section');
     const skuInputSection = document.getElementById('sku-input-section');
     const skuPropertiesDisplay = document.getElementById('sku-properties-display');
     
+    // Chat Elements
+    const chatWelcome = document.getElementById('chat-welcome');
+    const chatLog = document.getElementById('chat-log');
+    const chatInput = document.getElementById('chat-input');
+    const chatSendBtn = document.getElementById('chat-send-btn');
+    const chatInputContainer = document.getElementById('chat-input-container');
+    const chatHistoryList = document.getElementById('chat-history-list');
+    
+    // Node Properties Modal Elements
+    const nodePropertiesModal = document.getElementById('node-properties-modal');
+    const nodePropertiesTitle = document.getElementById('node-properties-title');
+    const nodePropertiesContent = document.getElementById('node-properties-content');
+    const closePropertiesModalBtn = nodePropertiesModal.querySelector('.close-properties-modal');
+
     // Sub-Cards
     const brokenSkuCard = document.getElementById('broken-sku-card');
     const brokenDemandNetworkCard = document.getElementById('broken-demand-network-card');
@@ -63,12 +79,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // State variables
     let currentSkuId = null;
     let isDemandSku = false;
+    let currentChatId = null;
 
     // --- View Management Functions ---
 
     function showDashboard() {
         dashboardSection.classList.remove('hidden');
         bomViewerWrapper.classList.add('hidden');
+        chatSection.classList.add('hidden');
         brokenNetworksSection.classList.add('hidden');
         bottlenecksSubcardsSection.classList.add('hidden');
         resultsContainer.classList.add('hidden');
@@ -77,6 +95,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function showBomViewer() {
         dashboardSection.classList.add('hidden');
         bomViewerWrapper.classList.remove('hidden');
+        chatSection.classList.add('hidden');
         brokenNetworksSection.classList.add('hidden');
         bottlenecksSubcardsSection.classList.add('hidden');
         // Clear previous results when switching to this view
@@ -85,18 +104,89 @@ document.addEventListener('DOMContentLoaded', () => {
         resultsContainer.innerHTML = '';
     }
 
+    function showChatView() {
+        dashboardSection.classList.add('hidden');
+        bomViewerWrapper.classList.add('hidden');
+        chatSection.classList.remove('hidden');
+        brokenNetworksSection.classList.add('hidden');
+        bottlenecksSubcardsSection.classList.add('hidden');
+        resultsContainer.classList.add('hidden');
+    }
+    
+    // --- Chat History Management ---
+
+    function getChatHistory() {
+        return JSON.parse(localStorage.getItem('chatHistory') || '[]');
+    }
+
+    function saveChatHistory(history) {
+        localStorage.setItem('chatHistory', JSON.stringify(history));
+    }
+
+    function renderChatHistory() {
+        const history = getChatHistory();
+        chatHistoryList.innerHTML = '';
+        history.forEach(chat => {
+            const historyItem = document.createElement('div');
+            historyItem.classList.add('p-2', 'text-sm', 'hover:bg-gray-300', 'rounded', 'cursor-pointer', 'truncate');
+            historyItem.textContent = chat.title;
+            historyItem.setAttribute('data-chat-id', chat.id);
+            historyItem.addEventListener('click', () => {
+                loadChat(chat.id);
+            });
+            chatHistoryList.appendChild(historyItem);
+        });
+    }
+
+    function loadChat(chatId) {
+        const history = getChatHistory();
+        const chat = history.find(c => c.id === chatId);
+        if (chat) {
+            currentChatId = chatId;
+            chatLog.innerHTML = '';
+            chat.messages.forEach(msg => {
+                addMessageToLog(msg.text, msg.sender, msg.data);
+            });
+            chatWelcome.classList.add('hidden');
+            chatLog.classList.remove('hidden');
+            chatSection.classList.remove('is-new-chat'); // BUG FIX
+            showChatView();
+        }
+    }
+
+    function startNewChat() {
+        currentChatId = null;
+        chatLog.innerHTML = '';
+        chatLog.classList.add('hidden');
+        chatWelcome.classList.remove('hidden');
+        chatSection.classList.add('is-new-chat'); // BUG FIX
+        showChatView();
+    }
+
     // --- Initial Setup ---
     showDashboard(); // Set the initial view to the dashboard
     fetchDashboardData();
+    renderChatHistory(); // Load history on page start
 
     // --- Event Listeners ---
 
     dashboardOption.addEventListener('click', showDashboard);
     bomViewerOption.addEventListener('click', showBomViewer);
+    newChatOption.addEventListener('click', startNewChat);
+
+    closePropertiesModalBtn.addEventListener('click', () => {
+        nodePropertiesModal.classList.add('hidden');
+    });
+    nodePropertiesModal.addEventListener('click', (event) => {
+        if (event.target === nodePropertiesModal) {
+            nodePropertiesModal.classList.add('hidden');
+        }
+    });
 
     brokenNetworksCard.addEventListener('click', () => {
         brokenNetworksSection.classList.toggle('hidden');
         bomViewerWrapper.classList.add('hidden');
+        chatSection.classList.add('hidden');
         bottlenecksSubcardsSection.classList.add('hidden');
         resultsContainer.classList.add('hidden');
     });
@@ -104,11 +194,126 @@ document.addEventListener('DOMContentLoaded', () => {
     bottlenecksCard.addEventListener('click', () => {
         bottlenecksSubcardsSection.classList.toggle('hidden');
         bomViewerWrapper.classList.add('hidden');
+        chatSection.classList.add('hidden');
         brokenNetworksSection.classList.add('hidden');
         resultsContainer.classList.add('hidden');
     });
 
+    // --- Chat Functionality ---
+    
+    function showThinkingIndicator() {
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('p-3', 'rounded-lg', 'assistant-message', 'flex', 'space-x-1');
+        
+        const dot1 = document.createElement('div');
+        dot1.classList.add('loader-dot');
+        const dot2 = document.createElement('div');
+        dot2.classList.add('loader-dot');
+        const dot3 = document.createElement('div');
+        dot3.classList.add('loader-dot');
+        
+        messageDiv.appendChild(dot1);
+        messageDiv.appendChild(dot2);
+        messageDiv.appendChild(dot3);
+        
+        chatLog.appendChild(messageDiv);
+        chatLog.scrollTop = chatLog.scrollHeight;
+        return messageDiv; // Return the element so we can remove it later
+    }
 
+    function addMessageToLog(message, sender, data = null) {
+        const messageContainer = document.createElement('div');
+        messageContainer.classList.add('p-3', 'rounded-lg', 'max-w-xs', 'lg:max-w-4xl', 'break-words');
+        
+        if (sender === 'user') {
+            messageContainer.classList.add('user-message');
+            messageContainer.textContent = message;
+        } else {
+            messageContainer.classList.add('assistant-message');
+            const textPart = document.createElement('p');
+            textPart.textContent = message;
+            messageContainer.appendChild(textPart);
+
+            if (data && data.response_type === 'graph') {
+                const graphContainer = document.createElement('div');
+                const graphId = `graph-${new Date().getTime()}`;
+                graphContainer.id = graphId;
+                graphContainer.style.height = '400px';
+                graphContainer.classList.add('mt-2', 'bg-gray-100', 'border', 'border-gray-300', 'rounded-md');
+                messageContainer.appendChild(graphContainer);
+                renderGraphInChat(data.data, graphId);
+            }
+        }
+        chatLog.appendChild(messageContainer);
+        chatLog.scrollTop = chatLog.scrollHeight;
+    }
+
+    function handleChatSubmit() {
+        const userMessage = chatInput.value.trim();
+        if (!userMessage) return;
+
+        chatWelcome.classList.add('hidden');
+        chatLog.classList.remove('hidden');
+        chatSection.classList.remove('is-new-chat'); // BUG FIX
+
+        addMessageToLog(userMessage, 'user');
+        chatInput.value = '';
+
+        const thinkingIndicator = showThinkingIndicator();
+
+        let history = getChatHistory();
+        let currentChat;
+
+        if (currentChatId === null) {
+            currentChatId = `chat-${new Date().getTime()}`;
+            const newChat = {
+                id: currentChatId,
+                title: userMessage.substring(0, 30) + (userMessage.length > 30 ? '...' : ''),
+                messages: [{ sender: 'user', text: userMessage }]
+            };
+            history.unshift(newChat);
+            currentChat = newChat;
+            renderChatHistory();
+        } else {
+            currentChat = history.find(c => c.id === currentChatId);
+            if (currentChat) {
+                currentChat.messages.push({ sender: 'user', text: userMessage });
+            }
+        }
+        saveChatHistory(history);
+
+        fetch('http://127.0.0.1:5000/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: userMessage })
+        })
+        .then(response => response.json())
+        .then(data => {
+            thinkingIndicator.remove();
+            const assistantMessageText = data.data || data.response; // Handle both new and old response format
+            addMessageToLog(assistantMessageText, 'assistant', data);
+            
+            let currentHistory = getChatHistory();
+            let chatToUpdate = currentHistory.find(c => c.id === currentChatId);
+            if (chatToUpdate) {
+                chatToUpdate.messages.push({ sender: 'assistant', text: assistantMessageText, data: data });
+                saveChatHistory(currentHistory);
+            }
+        })
+        .catch(error => {
+            thinkingIndicator.remove();
+            console.error('Error with chat API:', error);
+            addMessageToLog('Sorry, I had trouble connecting to the server.', 'assistant');
+        });
+    }
+
+    chatSendBtn.addEventListener('click', handleChatSubmit);
+    chatInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            handleChatSubmit();
+        }
+    });
+    
     function fetchDashboardData() {
         fetch('http://127.0.0.1:5000/api/dashboard')
             .then(response => response.json())
@@ -395,6 +600,49 @@ document.addEventListener('DOMContentLoaded', () => {
         skuPropertiesDisplay.classList.remove('hidden');
     }
 
+    function handleGraphClick(params, nodes, edges) {
+        let clickedItem = null;
+        let itemType = '';
+
+        if (params.nodes.length > 0) {
+            const nodeId = params.nodes[0];
+            clickedItem = nodes.get(nodeId);
+            itemType = clickedItem.nodeName || 'Node';
+        } else if (params.edges.length > 0) {
+            const edgeId = params.edges[0];
+            clickedItem = edges.get(edgeId);
+            itemType = 'Relationship';
+        }
+
+        if (clickedItem) {
+            const properties = JSON.parse(clickedItem.title);
+            nodePropertiesTitle.textContent = `Properties for ${itemType}`;
+            
+            nodePropertiesContent.innerHTML = '';
+            const table = document.createElement('table');
+            const tableBody = document.createElement('tbody');
+
+            for (const [key, value] of Object.entries(properties)) {
+                const row = document.createElement('tr');
+                const keyCell = document.createElement('td');
+                keyCell.className = 'font-semibold text-gray-600 pr-4 align-top';
+                keyCell.textContent = key.replace(/_/g, ' ');
+
+                const valueCell = document.createElement('td');
+                valueCell.className = 'text-gray-800 break-all';
+                valueCell.textContent = value;
+                
+                row.appendChild(keyCell);
+                row.appendChild(valueCell);
+                tableBody.appendChild(row);
+            }
+            
+            table.appendChild(tableBody);
+            nodePropertiesContent.appendChild(table);
+            nodePropertiesModal.classList.remove('hidden');
+        }
+    }
+
     function renderNetworkGraph(id, networkData, graphType, shortestPathData = null) {
         resultsContainer.innerHTML = '';
         resultsContainer.classList.remove('hidden');
@@ -414,7 +662,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const container = document.createElement('div');
         container.id = 'network-container';
-        container.classList.add('h-96', 'w-full');
         resultsContainer.appendChild(container);
         
         const nodes = new vis.DataSet();
@@ -507,44 +754,86 @@ document.addEventListener('DOMContentLoaded', () => {
             interaction: { navigationButtons: true, keyboard: true }
         };
         
-        const networkContainer = document.getElementById('network-container');
-        if (networkContainer) {
-            const network = new vis.Network(networkContainer, visData, options);
-            network.on("stabilizationIterationsDone", function () {
-                const canvasHeight = network.getBoundingBox().height + 50;
-                networkContainer.style.height = `${canvasHeight}px`;
-                network.fit();
-            });
+        const network = new vis.Network(container, visData, options);
+        network.on('click', (params) => handleGraphClick(params, nodes, edges));
+    }
+    
+    function renderGraphInChat(graphData, containerId) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
 
-            network.on('click', function(params) {
-                if (params.nodes.length > 0) {
-                    const nodeId = params.nodes[0];
-                    const clickedNode = nodes.get(nodeId);
-                    const properties = JSON.parse(clickedNode.title);
-                    const propertiesContent = document.getElementById('node-properties-content');
-                    propertiesContent.innerHTML = '';
-                    const table = document.createElement('table');
-                    table.classList.add('min-w-full', 'divide-y', 'divide-gray-200');
-                    const tableBody = document.createElement('tbody');
-                    for (const [key, value] of Object.entries(properties)) {
-                        const row = document.createElement('tr');
-                        const keyCell = document.createElement('td');
-                        keyCell.classList.add('px-4', 'py-3', 'text-sm', 'font-semibold', 'text-gray-600', 'w-1/3');
-                        keyCell.textContent = key.replace(/_/g, ' ');
-                        const valueCell = document.createElement('td');
-                        valueCell.classList.add('px-4', 'py-3', 'text-sm', 'text-gray-800');
-                        valueCell.textContent = value;
-                        row.appendChild(keyCell);
-                        row.appendChild(valueCell);
-                        tableBody.appendChild(row);
+        const nodes = new vis.DataSet();
+        const edges = new vis.DataSet();
+        const uniqueNodeIds = new Set();
+
+        graphData.forEach(path => {
+            path.nodes.forEach(node => {
+                if (!uniqueNodeIds.has(node.id)) {
+                    uniqueNodeIds.add(node.id);
+                    const props = node.properties;
+                    let visualLabel = props.sku_id || props.item || props.res_id || props.bom_num;
+                    let nodeOptions = {
+                        id: node.id,
+                        label: visualLabel,
+                        nodeName: visualLabel,
+                        title: JSON.stringify(props, null, 2),
+                    };
+                    if (node.labels.includes('SKU')) {
+                        nodeOptions.shape = 'image';
+                        nodeOptions.size = 25;
+                        if (props.broken_bom === true) nodeOptions.image = props.demand_sku === true ? 'images/sku_broken_bom_true_demand_sku_true.png' : 'images/sku_broken_bom_true.png';
+                        else if (props.bottleneck === true) nodeOptions.image = props.demand_sku === true ? 'images/sku_bottleneck_true_demand_sku_true.png' : 'images/sku_bottleneck_true.png';
+                        else nodeOptions.image = props.demand_sku === true ? 'images/sku_demand_sku_true.png' : 'images/sku_demand_sku_false.png';
+                    } else if (node.labels.includes('Res')) {
+                        nodeOptions.shape = 'image';
+                        nodeOptions.size = 25;
+                        nodeOptions.image = props.bottleneck === true ? 'images/res_bottleneck_true.png' : 'images/res_bottleneck_false.png';
+                    } else if (node.labels.includes('BOM')) {
+                        nodeOptions.shape = 'image';
+                        nodeOptions.image = 'images/production_method_node.png';
+                        nodeOptions.size = 20;
+                        nodeOptions.font = { vadjust: 20 };
+                    } else {
+                        nodeOptions.shape = 'box';
+                        nodeOptions.color = { background: '#d1d5db', border: '#9ca3af' };
+                        nodeOptions.size = 20;
                     }
-                    table.appendChild(tableBody);
-                    propertiesContent.appendChild(table);
-                    document.getElementById('node-properties-title').textContent = `Properties for ${clickedNode.nodeName}`;
-                    document.getElementById('node-properties-modal').classList.remove('hidden');
+                    nodes.add(nodeOptions);
                 }
             });
-        }
+
+            path.relationships.forEach(rel => {
+                let edgeOptions = {
+                    from: rel.startNode,
+                    to: rel.endNode,
+                    title: JSON.stringify(rel.properties, null, 2),
+                    arrows: 'to',
+                    color: { color: '#6b7280' },
+                };
+                if (rel.type === 'SOURCING') {
+                    edgeOptions.label = '';
+                    edgeOptions.arrows = { to: { enabled: true, scaleFactor: 1 }, middle: { enabled: true, type: 'image', imageWidth: 20, imageHeight: 20, src: 'images/sourcing_relation.png' } };
+                } else if (rel.type === 'CONSUMED_BY' || rel.type === 'PRODUCES') {
+                    edgeOptions.label = '';
+                } else {
+                    edgeOptions.label = rel.type;
+                    edgeOptions.font = { size: 10, color: '#6b7280', align: 'middle', strokeWidth: 5, strokeColor: '#ffffff' };
+                }
+                edges.add(edgeOptions);
+            });
+        });
+
+        const visData = { nodes: nodes, edges: edges };
+        const options = {
+            nodes: { font: { size: 12, color: '#4b5563' }, borderWidth: 2 },
+            edges: { color: { highlight: '#3b82f6' }, smooth: { enabled: true, type: 'straightCross' } },
+            physics: { enabled: false },
+            layout: { hierarchical: { direction: 'LR', sortMethod: 'directed' } },
+            interaction: { navigationButtons: false, keyboard: false }
+        };
+        
+        const network = new vis.Network(container, visData, options);
+        network.on('click', (params) => handleGraphClick(params, nodes, edges));
     }
 
     function fetchNetworkGraph(skuId, graphType) {
@@ -561,6 +850,4 @@ document.addEventListener('DOMContentLoaded', () => {
         fetch('http://127.0.0.1:5000/api/resource-network', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ res_id: resId }) })
         .then(response => response.json()).then(data => renderNetworkGraph(resId, data, graphType)).catch(error => console.error('Error fetching resource network:', error));
     }
-    
-    // ... (rest of the file is unchanged)
 });

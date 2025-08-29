@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Eleva AI Loader</title>
+<style>
+.eleva-loader { --size:48px; --speed:1s; }
+.eleva-loader{
+  position:relative; width:var(--size); height:var(--size);
+  display:grid; place-items:center;
+}
+.eleva-icon{
+  width:22px; height:22px; z-index:1;
+}
+.eleva-ring{
+  position:absolute; inset:0; transform-origin:center;
+  animation: spin var(--speed) linear infinite;
+}
+.path{ stroke-linecap:round; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="eleva-loader">
+  <svg class="eleva-ring" viewBox="0 0 50 50">
+    <defs>
+      <linearGradient id="elevaGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%"   stop-color="#0096C7"/>
+        <stop offset="40%"  stop-color="#48CAE4"/>
+        <stop offset="70%"  stop-color="#90E0EF"/>
+        <stop offset="100%" stop-color="#CAF0F8"/>
+      </linearGradient>
+    </defs>
+    <circle class="path" cx="25" cy="25" r="20" fill="none"
+            stroke="url(#elevaGradient)" stroke-width="4"/>
+  </svg>
+  <img class="eleva-icon" src="images/ElevaAI_short_logo.svg" alt="Eleva AI"/>
+</div>
+</body>
+</html>

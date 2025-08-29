@@ -16,7 +16,7 @@
             overflow-x: hidden; /* Prevent horizontal scrollbar */
         }
         .modal { display: none; }
-        .modal:not(.hidden) { display: block; }
+        .modal:not(.hidden) { display: flex; }
         #network-container {
             width: 100%;
             height: 600px;
@@ -25,13 +25,14 @@
             border-radius: 0.75rem;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
         }
-        #node-properties-content pre {
-            background-color: #f3f4f6;
-            padding: 1rem;
-            border-radius: 0.5rem;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            font-family: monospace;
+        #node-properties-content table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        #node-properties-content td {
+            text-align: left;
+            padding: 8px;
+            border-bottom: 1px solid #e5e7eb;
         }
         /* --- Sidebar Styles --- */
         #sidebar {
@@ -49,6 +50,7 @@
         #main-content {
             margin-left: 48px; /* Match collapsed sidebar width */
             transition: margin-left 0.3s ease-in-out;
+            height: 100vh;
         }
         #main-content.expanded {
             margin-left: 256px; /* Match expanded sidebar width */
@@ -66,7 +68,7 @@
         #sidebar.expanded #logo-container {
             justify-content: flex-start; /* For expanded state */
         }
-        /* --- New Sidebar Option Styles --- */
+        /* --- Sidebar Option Styles --- */
         #sidebar:not(.expanded) .option-text {
             display: none;
         }
@@ -76,6 +78,41 @@
         #sidebar:not(.expanded) ul li img {
             margin-right: 0;
         }
+        /* --- Chat Styles --- */
+        .user-message {
+            background-color: #3b82f6;
+            color: white;
+            align-self: flex-end;
+        }
+        .assistant-message {
+            background-color: #e5e7eb;
+            color: #1f2937;
+            align-self: flex-start;
+        }
+        /* -- BUG FIX: New chat view layout -- */
+        #chat-section.is-new-chat {
+            justify-content: center;
+        }
+        #chat-section.is-new-chat > .flex-1 {
+            flex-grow: 0;
+            margin-bottom: 1rem; /* Adds space between welcome message and input */
+            overflow-y: visible; /* Prevents the container from collapsing to zero height */
+        }
+        /* --- Loader Animation Styles --- */
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1.0); }
+        }
+        .loader-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #4b5563; /* gray-600 */
+            border-radius: 100%;
+            display: inline-block;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+        .loader-dot:nth-child(1) { animation-delay: -0.32s; }
+        .loader-dot:nth-child(2) { animation-delay: -0.16s; }
     </style>
 </head>
 <body class="bg-gray-100">
@@ -86,29 +123,29 @@
             <img id="logo-short" src="images/ElevaAI_short_logo.svg" alt="Eleva AI Short Logo" class="w-7 cursor-pointer">
         </div>
         
-        <div id="sidebar-content">
+        <div id="sidebar-content" class="flex flex-col h-full">
             <ul>
-                <li id="dashboard-option" class="flex items-center p-2 hover:bg-gray-300 rounded cursor-pointer">
-                    <img src="images/Dashboard.png" alt="Dashboard Icon" class="h-5 w-5 mr-3 flex-shrink-0">
+                <li id="dashboard-option" class="flex items-center p-2 hover:bg-gray-300 rounded cursor-pointer text-sm">
+                    <img src="images/Dashboard.png" alt="Dashboard Icon" class="h-4 w-4 mr-3 flex-shrink-0">
                     <span class="option-text">Dashboard</span>
                 </li>
-                <li id="bom-viewer-option" class="flex items-center p-2 hover:bg-gray-300 rounded cursor-pointer">
-                    <img src="images/BOM_Viewer.png" alt="BOM Viewer Icon" class="h-5 w-5 mr-3 flex-shrink-0">
+                <li id="bom-viewer-option" class="flex items-center p-2 hover:bg-gray-300 rounded cursor-pointer text-sm">
+                    <img src="images/BOM_Viewer.png" alt="BOM Viewer Icon" class="h-4 w-4 mr-3 flex-shrink-0">
                     <span class="option-text">BOM Viewer</span>
                 </li>
-                <li class="flex items-center p-2 hover:bg-gray-300 rounded cursor-pointer">
-                    <img src="images/New_Chat.png" alt="New Chat Icon" class="h-5 w-5 mr-3 flex-shrink-0">
+                <li id="new-chat-option" class="flex items-center p-2 hover:bg-gray-300 rounded cursor-pointer text-sm">
+                    <img src="images/New_Chat.png" alt="New Chat Icon" class="h-4 w-4 mr-3 flex-shrink-0">
                     <span class="option-text">New Chat</span>
                 </li>
-                <li class="p-2 hover:bg-gray-300 rounded cursor-pointer">
-                    <span class="option-text">Settings</span>
-                </li>
             </ul>
+            <h4 class="px-2 mt-4 mb-2 font-semibold text-xs text-gray-500 tracking-wider option-text">Chats</h4>
+            <div id="chat-history-list" class="flex-1 overflow-y-auto">
+                </div>
         </div>
     </div>
 
-    <main id="main-content" class="p-8">
-        <div id="dashboard-section">
+    <main id="main-content">
+        <div id="dashboard-section" class="p-8">
             <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
                 <div class="bg-white rounded-xl shadow-lg p-4 hover:shadow-2xl transition-shadow duration-300">
                     <h3 class="text-sm font-medium text-gray-500 uppercase">Total Demand at Risk</h3>
@@ -132,7 +169,7 @@
             </section>
         </div>
 
-        <div id="bottlenecks-subcards-section" class="hidden pt-4">
+        <div id="bottlenecks-subcards-section" class="hidden p-8">
             <div class="max-w-2xl">
                 <section class="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-4">
                     <div id="bottleneck-resources-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
@@ -151,7 +188,7 @@
             </div>
         </div>
 
-        <div id="broken-networks-section" class="hidden pt-4">
+        <div id="broken-networks-section" class="hidden p-8">
             <div class="max-w-2xl">
                 <section class="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-4">
                     <div id="broken-sku-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
@@ -170,7 +207,7 @@
             </div>
         </div>
         
-        <div id="bom-viewer-wrapper" class="hidden w-full max-w-7xl mx-auto flex flex-col items-center pt-2">
+        <div id="bom-viewer-wrapper" class="hidden w-full max-w-7xl mx-auto flex flex-col items-center p-8 pt-2">
             <div id="sku-input-section">
                 <div class="grid grid-cols-1 md:grid-cols-1 gap-6">
                     <div class="bg-white rounded-xl shadow-lg p-4">
@@ -190,8 +227,44 @@
             <div id="sku-properties-display" class="hidden bg-white rounded-xl shadow-lg p-4 mt-4 w-full">
             </div>
         </div>
+
+        <div id="chat-section" class="hidden h-full flex-grow flex flex-col relative">
+            <div class="flex-1 flex flex-col overflow-y-auto">
+                <div id="chat-welcome" class="flex flex-col justify-center items-center">
+                    <img src="images/ElevaAI_short_logo.svg" class="w-16 h-16 mb-4" alt="Eleva AI Logo">
+                    <p class="text-2xl font-medium text-gray-600">How can I help today?</p>
+                </div>
+                <div id="chat-log" class="hidden p-8 flex flex-col space-y-4">
+                    </div>
+            </div>
+            <div id="chat-input-container" class="p-4 w-full transition-all duration-500 ease-in-out">
+                <div class="flex items-center space-x-2 max-w-4xl mx-auto w-full">
+                    <input type="text" id="chat-input" placeholder="Ask about your supply chain..." class="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <button id="chat-send-btn" class="bg-blue-600 text-white rounded-full p-2 hover:bg-blue-700 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
             
-        <div id="results-container" class="bg-white rounded-xl shadow-lg p-6 hidden mt-4">
+        <div id="results-container" class="p-8 hidden mt-4">
+        </div>
+
+        <div id="node-properties-modal" class="modal hidden fixed inset-0 bg-gray-900 bg-opacity-50 items-center justify-center z-50">
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4">
+                <div class="flex justify-between items-center p-4 border-b">
+                    <h3 id="node-properties-title" class="text-lg font-semibold text-gray-800">Properties</h3>
+                    <button class="close-properties-modal text-gray-500 hover:text-gray-800">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+                <div id="node-properties-content" class="p-4 max-h-96 overflow-y-auto">
+                    </div>
+            </div>
         </div>
     </main>
     <script src="main.js"></script>
