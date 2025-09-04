@@ -1,5 +1,5 @@
 # app.py
-from flask import Flask, jsonify, request, send_from_directory # Added send_from_directory
+from flask import Flask, jsonify, request
 from neo4j import GraphDatabase
 from flask_cors import CORS
 import random
@@ -259,19 +259,6 @@ def handle_chat():
         return jsonify({'response_type': 'text', 'data': response.text.replace('\\_', '_')})
     except Exception as e:
         return jsonify({'response_type': 'text', 'data': f"An error occurred: {e}"}), 500
-
-# --- Static File Serving ---
-# Add new routes to serve the frontend files
-
-@app.route('/')
-def serve_index():
-    """Serves the index.html file for the root URL."""
-    return send_from_directory('.', 'index.html')
-
-@app.route('/<path:path>')
-def serve_static_files(path):
-    """Serves static files like JS, CSS, and images."""
-    return send_from_directory('.', path)
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

@@ -1,5 +1,3 @@
-import { createNodeIcon } from './shape-library.js';
-
 document.addEventListener('DOMContentLoaded', () => {
 
     // --- Sidebar Code ---
@@ -67,7 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentSkuId = null;
     let isDemandSku = false;
     let currentChatId = null;
-    let lastTableRenderFunction = null; 
+    let lastTableRenderFunction = null; // State for the "Back" button from a graph to a list
 
     // --- View Management Functions ---
     function showDashboardContent(elementToShow) {
@@ -310,22 +308,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function fetchAndDisplayNews() {
+        const categoryConfig = {
+            supplier: { el: document.getElementById('news-supplier'), title: 'Supplier Disruption', icon: '<svg class="h-6 w-6 text-red-500 mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>' },
+            logistics: { el: document.getElementById('news-logistics'), title: 'Logistics Delays', icon: '<svg class="h-6 w-6 text-blue-500 mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10l2-2h8a1 1 0 001-1z" /><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a6 6 0 006 0m-6 0h6m6-6.75h6m-6 0a6 6 0 00-6 0m6 0v6m0-6L21.75 12" /></svg>' },
+            market: { el: document.getElementById('news-market'), title: 'Demand Market', icon: '<svg class="h-6 w-6 text-green-500 mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-3.75-.625m3.75.625l-6.25 3.75" /></svg>' },
+            geopolitical: { el: document.getElementById('news-geopolitical'), title: 'Geopolitical', icon: '<svg class="h-6 w-6 text-purple-500 mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A11.953 11.953 0 0012 15c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 003 12c0 .778.099 1.533.284 2.253m0 0" /></svg>' },
+            compliance: { el: document.getElementById('news-compliance'), title: 'Compliance', icon: '<svg class="h-6 w-6 text-yellow-500 mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v17.25m0 0c-1.472 0-2.882.265-4.185.75M12 20.25c1.472 0 2.882.265 4.185.75M18.75 4.97A48.416 48.416 0 0012 4.5c-2.291 0-4.545.16-6.75.47m13.5 0c1.01.143 2.01.317 3 .52m-3-.52l2.62 10.726c.122.499-.106 1.028-.589 1.202a5.988 5.988 0 01-2.036.243c-2.132 0-4.14-.354-6.044-.962l-1.532-2.305m-2.72.125a59.769 59.769 0 01-2.07-3.433m-2.07-3.433a59.769 59.769 0 00-2.07 3.433m2.07-3.433v10.155m-2.07-10.155L6.41 4.972M12 4.5c-2.291 0-4.545.16-6.75.47m6.75-.47L12 3m0 0l-1.591.523M12 3c-1.472 0-2.882.265-4.185.75M12 3c1.472 0 2.882.265 4.185.75M12 20.25c-2.488 0-4.813-.284-7.043-.815M12 20.25c2.488 0 4.813-.284 7.043-.815" /></svg>' },
+        };
+        
         fetch('http://127.0.0.1:5000/api/supply-chain-news')
             .then(response => response.json())
             .then(newsData => {
                 if (newsData.error) throw new Error(newsData.error);
                 for (const category in newsData) {
-                    if (document.getElementById(`news-${category}`)) {
-                        createCarousel(document.getElementById(`news-${category}`), newsData[category], category.charAt(0).toUpperCase() + category.slice(1), '');
+                    if (categoryConfig[category]) {
+                        const config = categoryConfig[category];
+                        createCarousel(config.el, newsData[category], config.title, config.icon);
                     }
                 }
             })
             .catch(error => {
                 console.error('Error fetching or displaying news:', error);
-                ['supplier', 'logistics', 'market', 'geopolitical', 'compliance'].forEach(category => {
-                    const el = document.getElementById(`news-${category}`);
-                    if (el) el.innerHTML = `<div class="p-4"><h4 class="font-bold text-gray-800">${category.charAt(0).toUpperCase() + category.slice(1)}</h4><p class="text-sm text-red-500">Could not load news feed.</p></div>`;
-                });
+                for (const key in categoryConfig) {
+                    const config = categoryConfig[key];
+                    config.el.innerHTML = `<div class="p-4"><div class="flex items-center mb-2">${config.icon}<h4 class="font-bold text-gray-800">${config.title}</h4></div><p class="text-sm text-red-500">Could not load news feed.</p></div>`;
+                }
             });
     }
 
@@ -358,7 +365,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (backFunction) {
             const backButton = document.createElement('button');
             backButton.className = 'flex items-center p-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors';
-            backButton.title = 'Back';
+            backButton.title = 'Back'; // Tooltip for accessibility
             backButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" /></svg>`;
             backButton.addEventListener('click', backFunction);
             header.appendChild(backButton);
@@ -370,6 +377,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const renderFunc = () => {
             resultsContainer.innerHTML = ''; 
             resultsContainer.appendChild(createHeaderWithBackButton(title, backFunction));
+
             if (!data || data.length === 0) {
                 resultsContainer.innerHTML += `<p class="text-gray-500">${messageIfEmpty}</p>`;
                 return;
@@ -394,6 +402,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             table.appendChild(tableBody);
             resultsContainer.appendChild(table);
+
             resultsContainer.querySelectorAll('.resource-network-btn').forEach(button => {
                 button.addEventListener('click', (event) => {
                     const resId = event.target.getAttribute('data-res-id');
@@ -410,6 +419,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const renderFunc = () => {
             resultsContainer.innerHTML = '';
             resultsContainer.appendChild(createHeaderWithBackButton(title, backFunction));
+
             if (!data || data.length === 0) {
                 resultsContainer.innerHTML += `<p class="text-gray-500">${messageIfEmpty}</p>`;
                 return;
@@ -443,6 +453,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             table.appendChild(tableBody);
             resultsContainer.appendChild(table);
+
             resultsContainer.querySelectorAll('.network-btn').forEach(button => {
                 button.addEventListener('click', (event) => {
                     const skuId = event.target.getAttribute('data-sku-id');
@@ -455,17 +466,32 @@ document.addEventListener('DOMContentLoaded', () => {
         renderFunc();
     }
     
-    // Sub-Card Click Events
-    const renderBrokenSkus = () => fetch('http://127.0.0.1:5000/api/broken-networks').then(r => r.json()).then(d => { createSkuTable('Broken SKUs', d, 'No broken SKUs found.', () => showDashboardContent(brokenNetworksSection)); showDashboardContent(resultsContainer); });
-    const renderBottleneckResources = () => fetch('http://127.0.0.1:5000/api/bottleneck-resources').then(r => r.json()).then(d => { createResourceTable('Bottleneck Resources', d, 'No bottlenecked resources found.', () => showDashboardContent(bottlenecksSubcardsSection)); showDashboardContent(resultsContainer); });
-    const renderBottleneckSkus = () => fetch('http://127.0.0.1:5000/api/bottleneck-skus').then(r => r.json()).then(d => { createSkuTable('Bottleneck SKUs', d, 'No bottlenecked SKUs found.', () => showDashboardContent(bottlenecksSubcardsSection)); showDashboardContent(resultsContainer); });
-    const renderBrokenDemand = () => fetch('http://127.0.0.1:5000/api/broken-demand-networks').then(r => r.json()).then(d => { createSkuTable('Broken Finished Goods', d, 'No broken FG networks found.', () => showDashboardContent(brokenNetworksSection)); showDashboardContent(resultsContainer); });
+    // Sub-Card Click Events with Back Button logic
+    brokenSkuCard.addEventListener('click', () => {
+        fetch('http://127.0.0.1:5000/api/broken-networks').then(r => r.json()).then(d => { 
+            createSkuTable('Broken SKUs', d, 'No broken SKUs found.', () => showDashboardContent(brokenNetworksSection)); 
+            showDashboardContent(resultsContainer); 
+        });
+    });
+    bottleneckResourcesCard.addEventListener('click', () => {
+        fetch('http://127.0.0.1:5000/api/bottleneck-resources').then(r => r.json()).then(d => { 
+            createResourceTable('Bottleneck Resources', d, 'No bottlenecked resources found.', () => showDashboardContent(bottlenecksSubcardsSection)); 
+            showDashboardContent(resultsContainer); 
+        });
+    });
+    bottleneckSkusCard.addEventListener('click', () => {
+        fetch('http://127.0.0.1:5000/api/bottleneck-skus').then(r => r.json()).then(d => { 
+            createSkuTable('Bottleneck SKUs', d, 'No bottlenecked SKUs found.', () => showDashboardContent(bottlenecksSubcardsSection)); 
+            showDashboardContent(resultsContainer); 
+        });
+    });
+    brokenDemandNetworkCard.addEventListener('click', () => {
+        fetch('http://127.0.0.1:5000/api/broken-demand-networks').then(r => r.json()).then(d => { 
+            createSkuTable('Broken Finished Goods', d, 'No broken FG networks found.', () => showDashboardContent(brokenNetworksSection)); 
+            showDashboardContent(resultsContainer); 
+        });
+    });
     
-    brokenSkuCard.addEventListener('click', renderBrokenSkus);
-    bottleneckResourcesCard.addEventListener('click', renderBottleneckResources);
-    bottleneckSkusCard.addEventListener('click', renderBottleneckSkus);
-    brokenDemandNetworkCard.addEventListener('click', renderBrokenDemand);
-
     // BOM Viewer Specific Functions
     getSkuDetailsBtn.addEventListener('click', () => {
         const skuId = `${itemInput.value.trim()}@${locInput.value.trim()}`;
@@ -483,7 +509,6 @@ document.addEventListener('DOMContentLoaded', () => {
             graphContainer.classList.add('w-full', 'mt-4'); 
             bomViewerWrapper.appendChild(graphContainer);
             
-            lastTableRenderFunction = null; 
             if (isDemandSku) fetchNetworkWithShortestPath(currentSkuId, 'Full Network with Shortest Path', graphContainer);
             else fetchNetworkGraph(currentSkuId, 'Full Network', graphContainer);
         }
@@ -554,10 +579,70 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Graph Rendering Logic ---
+    function createSvgIcon(color, pathData, size = 48) {
+        // No longer using the SVG filter, shadow is handled by vis.js options
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="white" stroke="${color}" stroke-width="1.5"/><path fill="${color}" stroke-width="0" d="${pathData}"/></svg>`;
+        return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    }
+
+    function getNodeStyle(node) {
+        const props = node.properties;
+        const style = { 
+            shape: 'image', 
+            size: 25, 
+            font: { vadjust: 0 }, 
+            label: props.sku_id || props.item || props.res_id || props.bom_num,
+            // Add the shadow property to all nodes for the "lifted" effect
+            shadow: {
+                enabled: true,
+                color: 'rgba(0, 0, 0, 0.25)',
+                size: 10,
+                x: 3,
+                y: 3
+            }
+        };
+
+        // Use the new icon paths
+        const ICONS = {
+            SKU: 'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z M3.27 6.96 12 12.01l8.73-5.05 M12 22.08V12',
+            BOM: 'M8 6h13 M8 12h13 M8 18h13 M3 6h.01 M3 12h.01 M3 18h.01',
+            RESOURCE: 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8z'
+        };
+        const COLORS = { SKU_DEMAND: '#0077b6', SKU_COMPONENT: '#48cae4', BOM: '#6c757d', RESOURCE: '#2a9d8f', BROKEN: '#e63946', BOTTLENECK: '#fca311' };
+
+        let color = '';
+        let pathData = '';
+
+        if (node.labels.includes('SKU')) {
+            pathData = ICONS.SKU;
+            color = props.demand_sku ? COLORS.SKU_DEMAND : COLORS.SKU_COMPONENT;
+            if (props.broken_bom) color = COLORS.BROKEN;
+            else if (props.bottleneck) color = COLORS.BOTTLENECK;
+        } else if (node.labels.includes('Res')) {
+            pathData = ICONS.RESOURCE;
+            color = props.bottleneck ? COLORS.BOTTLENECK : COLORS.RESOURCE;
+        } else if (node.labels.includes('BOM')) {
+            pathData = ICONS.BOM;
+            color = COLORS.BOM;
+            style.font.vadjust = 25;
+            style.size = 20;
+        } else {
+            style.shape = 'box';
+            style.color = { background: '#d1d5db', border: '#9ca3af' };
+            delete style.shadow; // No shadow for the fallback shape
+            return style;
+        }
+        style.image = createSvgIcon(color, pathData);
+        return style;
+    }
+
     function renderNetworkGraph(id, networkData, graphType, targetContainer, shortestPathData = null) {
         targetContainer.innerHTML = '';
-        targetContainer.appendChild(createHeaderWithBackButton(graphType, lastTableRenderFunction));
         
+        // Use the helper to create a header with a back button
+        const header = createHeaderWithBackButton(graphType, lastTableRenderFunction);
+        targetContainer.appendChild(header);
+
         if (!networkData || networkData.length === 0) {
             targetContainer.innerHTML += '<p class="text-gray-500">No network data found.</p>';
             return;
@@ -575,16 +660,18 @@ document.addEventListener('DOMContentLoaded', () => {
             path.nodes.forEach(node => {
                 if (!uniqueNodeIds.has(node.id)) {
                     uniqueNodeIds.add(node.id);
-                    const icon = createNodeIcon(node);
+                    const style = getNodeStyle(node);
                     nodes.add({
                         id: node.id,
-                        label: node.properties.sku_id || node.properties.item || node.properties.res_id || node.properties.bom_num,
-                        nodeName: node.properties.sku_id || node.properties.item || node.properties.res_id || node.properties.bom_num,
+                        label: style.label,
+                        nodeName: style.label,
                         title: JSON.stringify(node.properties, null, 2),
-                        shape: 'image',
-                        image: icon.image,
-                        size: icon.size,
-                        font: { vadjust: icon.vadjust }
+                        shape: style.shape,
+                        size: style.size,
+                        font: style.font,
+                        image: style.image,
+                        color: style.color,
+                        shadow: style.shadow
                     });
                 }
             });
@@ -598,10 +685,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         
         const network = new vis.Network(container, { nodes, edges }, {
-            nodes: { font: { size: 12, color: '#4b5563' }, borderWidth: 0, shapeProperties: { useImageSize: true } },
+            nodes: { font: { size: 12, color: '#4b5563' }, borderWidth: 2 },
             edges: { color: { highlight: '#3b82f6' }, smooth: { enabled: true, type: 'straightCross' } },
             physics: { enabled: false },
-            layout: { hierarchical: { direction: 'LR', sortMethod: 'directed', levelSeparation: 300, nodeSpacing: 150 } },
+            layout: { hierarchical: { direction: 'LR', sortMethod: 'directed', levelSeparation: 250, nodeSpacing: 150 } },
             interaction: { navigationButtons: true, keyboard: true }
         });
         network.on('click', (params) => handleGraphClick(params, nodes, edges));
