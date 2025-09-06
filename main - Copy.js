@@ -659,18 +659,27 @@ document.addEventListener('DOMContentLoaded', () => {
         })
         .catch(error => console.error('Error fetching SKU details:', error));
     }
+    
     function displaySkuProperties(properties) {
         skuPropertiesDisplay.innerHTML = '';
+        
+        // MODIFIED: Added wrapper for horizontal scrolling
+        const tableWrapper = document.createElement('div');
+        tableWrapper.className = 'overflow-x-auto';
+
         const table = document.createElement('table');
         table.className = 'min-w-full divide-y divide-gray-200 text-sm';
         table.innerHTML = `<thead class="bg-gray-50"><tr>${Object.keys(properties).map(key => `<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">${key.replace(/_/g, ' ')}</th>`).join('')}</tr></thead>`;
+        
         const tableBody = document.createElement('tbody');
         tableBody.className = 'bg-white divide-y divide-gray-200';
         const row = document.createElement('tr');
         row.innerHTML = Object.values(properties).map(value => `<td class="px-4 py-2 whitespace-nowrap text-gray-800">${value}</td>`).join('');
         tableBody.appendChild(row);
         table.appendChild(tableBody);
-        skuPropertiesDisplay.appendChild(table);
+        
+        tableWrapper.appendChild(table);
+        skuPropertiesDisplay.appendChild(tableWrapper);
         skuPropertiesDisplay.classList.remove('hidden');
     }
 
