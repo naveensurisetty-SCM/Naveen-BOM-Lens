@@ -49,6 +49,9 @@
         .news-carousel:hover .carousel-arrow {
             opacity: 1;
         }
+        #main-cards-container.hidden {
+            display: none;
+        }
     </style>
 </head>
 <body class="bg-gray-100">
@@ -71,15 +74,21 @@
 
     <main id="main-content">
         <div id="dashboard-section" class="px-8 py-4">
-            <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-                <div class="bg-white rounded-xl shadow-lg p-4 hover:shadow-2xl transition-shadow duration-300"><h3 class="text-sm font-medium text-gray-500 uppercase">Total Demand at Risk</h3><p id="total-demand-at-risk" class="mt-1 text-2xl font-bold text-red-600">$0</p></div>
-                <div id="affected-orders-card" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
-                    <h3 class="text-sm font-medium text-gray-500 uppercase">Affected Orders</h3>
-                    <p id="affected-orders" class="mt-1 text-2xl font-bold text-red-600">0</p>
-                </div>
-                <div id="broken-networks-card" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300"><h3 class="text-sm font-medium text-gray-500 uppercase">Broken Networks</h3><p id="broken-networks" class="mt-1 text-2xl font-bold text-orange-500">0</p></div>
-                <div id="bottlenecks-card" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300"><h3 class="text-sm font-medium text-gray-500 uppercase">Bottlenecks</h3><p id="bottlenecks-count" class="mt-1 text-2xl font-bold text-yellow-500">0</p></div>
-            </section>
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-gray-800">Dashboard Overview</h2>
+                <button id="toggle-cards-btn" class="p-2 rounded-full hover:bg-gray-200 transition-colors" title="Toggle Overview Cards"></button>
+            </div>
+            <div id="main-cards-container">
+                <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                    <div class="bg-white rounded-xl shadow-lg p-4 hover:shadow-2xl transition-shadow duration-300"><h3 class="text-sm font-medium text-gray-500 uppercase">Total Demand at Risk</h3><p id="total-demand-at-risk" class="mt-1 text-2xl font-bold text-red-600">$0</p></div>
+                    <div id="affected-orders-card" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
+                        <h3 class="text-sm font-medium text-gray-500 uppercase">Affected Orders</h3>
+                        <p id="affected-orders" class="mt-1 text-2xl font-bold text-red-600">0</p>
+                    </div>
+                    <div id="broken-networks-card" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300"><h3 class="text-sm font-medium text-gray-500 uppercase">Broken Networks</h3><p id="broken-networks" class="mt-1 text-2xl font-bold text-orange-500">0</p></div>
+                    <div id="bottlenecks-card" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300"><h3 class="text-sm font-medium text-gray-500 uppercase">Bottlenecks</h3><p id="bottlenecks-count" class="mt-1 text-2xl font-bold text-yellow-500">0</p></div>
+                </section>
+            </div>
 
             <div id="dashboard-content-area">
                 <section id="news-feed-section" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

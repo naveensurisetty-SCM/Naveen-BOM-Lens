@@ -31,6 +31,37 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     // --- End of Sidebar Code ---
 
+    // --- Main Cards Toggle Code ---
+    const toggleCardsBtn = document.getElementById('toggle-cards-btn');
+    const mainCardsContainer = document.getElementById('main-cards-container');
+    const collapseIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" /></svg>`;
+    const expandIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>`;
+
+    const setCardsState = (isExpanded) => {
+        if (isExpanded) {
+            mainCardsContainer.classList.remove('hidden');
+            toggleCardsBtn.innerHTML = collapseIcon;
+            localStorage.setItem('cardsState', 'expanded');
+        } else {
+            mainCardsContainer.classList.add('hidden');
+            toggleCardsBtn.innerHTML = expandIcon;
+            localStorage.setItem('cardsState', 'collapsed');
+        }
+    };
+
+    toggleCardsBtn.addEventListener('click', () => {
+        const isCurrentlyExpanded = !mainCardsContainer.classList.contains('hidden');
+        setCardsState(!isCurrentlyExpanded);
+    });
+
+    const savedCardsState = localStorage.getItem('cardsState');
+    if (savedCardsState === 'collapsed') {
+        setCardsState(false);
+    } else {
+        setCardsState(true); // Default to expanded
+    }
+    // --- End of Main Cards Toggle Code ---
+
     // --- Element Selectors ---
     const brokenNetworksCard = document.getElementById('broken-networks-card');
     const bottlenecksCard = document.getElementById('bottlenecks-card');
@@ -659,27 +690,18 @@ document.addEventListener('DOMContentLoaded', () => {
         })
         .catch(error => console.error('Error fetching SKU details:', error));
     }
-    
     function displaySkuProperties(properties) {
         skuPropertiesDisplay.innerHTML = '';
-        
-        // MODIFIED: Added wrapper for horizontal scrolling
-        const tableWrapper = document.createElement('div');
-        tableWrapper.className = 'overflow-x-auto';
-
         const table = document.createElement('table');
         table.className = 'min-w-full divide-y divide-gray-200 text-sm';
         table.innerHTML = `<thead class="bg-gray-50"><tr>${Object.keys(properties).map(key => `<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">${key.replace(/_/g, ' ')}</th>`).join('')}</tr></thead>`;
-        
         const tableBody = document.createElement('tbody');
         tableBody.className = 'bg-white divide-y divide-gray-200';
         const row = document.createElement('tr');
         row.innerHTML = Object.values(properties).map(value => `<td class="px-4 py-2 whitespace-nowrap text-gray-800">${value}</td>`).join('');
         tableBody.appendChild(row);
         table.appendChild(tableBody);
-        
-        tableWrapper.appendChild(table);
-        skuPropertiesDisplay.appendChild(tableWrapper);
+        skuPropertiesDisplay.appendChild(table);
         skuPropertiesDisplay.classList.remove('hidden');
     }
 

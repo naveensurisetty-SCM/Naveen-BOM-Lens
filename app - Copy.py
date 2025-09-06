@@ -434,8 +434,11 @@ def handle_chat():
     try:
         data = request.json
         user_message = data.get('message', '')
+                                                
+                                               
         system_instruction = "You are a supply chain assistant. Your primary function is to use the provided tools to answer user questions about supply chain data. If a user asks to see, show, draw, or get a network or graph, you must instruct them to use the 'BOM Viewer' for that functionality. For other questions, use the available tools. Only answer conversationally if no tool is appropriate for the user's query."
         model = genai.GenerativeModel('gemini-1.5-flash', tools=list(available_tools.values()), system_instruction=system_instruction)
+                                                        
         chat = model.start_chat(enable_automatic_function_calling=True)
         response = chat.send_message(user_message)
         return jsonify({'response_type': 'text', 'data': response.text.replace('\\_', '_')})
@@ -455,3 +458,5 @@ def serve_static_files(path):
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
+ 
+                                                                                                                                                                                                                                                              

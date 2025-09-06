@@ -31,6 +31,37 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     // --- End of Sidebar Code ---
 
+    // --- Main Cards Toggle Code ---
+    const toggleCardsBtn = document.getElementById('toggle-cards-btn');
+    const mainCardsContainer = document.getElementById('main-cards-container');
+    const collapseIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" /></svg>`;
+    const expandIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>`;
+
+    const setCardsState = (isExpanded) => {
+        if (isExpanded) {
+            mainCardsContainer.classList.remove('hidden');
+            toggleCardsBtn.innerHTML = collapseIcon;
+            localStorage.setItem('cardsState', 'expanded');
+        } else {
+            mainCardsContainer.classList.add('hidden');
+            toggleCardsBtn.innerHTML = expandIcon;
+            localStorage.setItem('cardsState', 'collapsed');
+        }
+    };
+
+    toggleCardsBtn.addEventListener('click', () => {
+        const isCurrentlyExpanded = !mainCardsContainer.classList.contains('hidden');
+        setCardsState(!isCurrentlyExpanded);
+    });
+
+    const savedCardsState = localStorage.getItem('cardsState');
+    if (savedCardsState === 'collapsed') {
+        setCardsState(false);
+    } else {
+        setCardsState(true); // Default to expanded
+    }
+    // --- End of Main Cards Toggle Code ---
+
     // --- Element Selectors ---
     const brokenNetworksCard = document.getElementById('broken-networks-card');
     const bottlenecksCard = document.getElementById('bottlenecks-card');
