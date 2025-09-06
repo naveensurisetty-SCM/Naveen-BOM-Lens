@@ -52,6 +52,61 @@
         #main-cards-container.hidden {
             display: none;
         }
+
+        /* --- Quarter Filter Styles --- */
+        .quarter-filter-btn {
+            background-color: #e5e7eb; /* gray-200 */
+            color: #374151; /* gray-700 */
+            transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+            flex-shrink: 0;
+        }
+        .quarter-filter-btn:hover {
+            background-color: #d1d5db; /* gray-300 */
+        }
+        .quarter-filter-btn.active {
+            background-color: #4f46e5; /* indigo-600 */
+            color: #ffffff; /* white */
+        }
+        
+        #quarter-filter-bar {
+            position: relative;
+            background-color: #fff;
+            border-radius: 0.375rem;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+            transition: max-height 0.5s ease-in-out;
+            overflow: hidden;
+            cursor: pointer;
+            max-height: 40px; /* Collapsed height */
+        }
+
+        #quarter-filter-bar.expanded {
+            max-height: 200px; /* Expanded height */
+            cursor: default;
+        }
+
+        #quarter-filter-container {
+            padding: 4px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        #quarter-filter-bar.collapsed #quarter-filter-container > *:not(.active-display) {
+            display: none;
+        }
+
+        .active-display {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            height: 32px;
+            padding: 0 8px;
+        }
+        .active-display .year-label { margin-left: 0; }
+        
+        #quarter-filter-bar.expanded .active-display {
+            display: none;
+        }
     </style>
 </head>
 <body class="bg-gray-100">
@@ -75,9 +130,13 @@
     <main id="main-content">
         <div id="dashboard-section" class="px-8 py-4">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold text-gray-800">Dashboard Overview</h2>
-                <button id="toggle-cards-btn" class="p-2 rounded-full hover:bg-gray-200 transition-colors" title="Toggle Overview Cards"></button>
+                <h2 class="text-2xl font-bold text-gray-800 mr-auto">Dashboard Overview</h2>
+                <div id="quarter-filter-bar" class="collapsed">
+                    <div id="quarter-filter-container"></div>
+                </div>
+                <button id="toggle-cards-btn" class="p-2 rounded-full hover:bg-gray-200 transition-colors ml-4" title="Toggle Overview Cards"></button>
             </div>
+            
             <div id="main-cards-container">
                 <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
                     <div class="bg-white rounded-xl shadow-lg p-4 hover:shadow-2xl transition-shadow duration-300"><h3 class="text-sm font-medium text-gray-500 uppercase">Total Demand at Risk</h3><p id="total-demand-at-risk" class="mt-1 text-2xl font-bold text-red-600">$0</p></div>

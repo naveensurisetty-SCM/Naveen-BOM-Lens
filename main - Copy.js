@@ -1,4 +1,5 @@
 import { createNodeIcon } from './shape-library.js';
+import { planConfig } from './config.js';
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -61,6 +62,129 @@ document.addEventListener('DOMContentLoaded', () => {
         setCardsState(true); // Default to expanded
     }
     // --- End of Main Cards Toggle Code ---
+
+    // --- Quarter Filter Logic ---
+    const quarterFilterBar = document.getElementById('quarter-filter-bar');
+    const quarterFilterContainer = document.getElementById('quarter-filter-container');
+    let isQuarterFilterExpanded = false;
+
+    function generateQuarters(startDateString, count) {
+        const quarters = [];
+        const startDate = new Date(startDateString + 'T00:00:00Z');
+        
+        const startMonth = startDate.getUTCMonth();
+        const startQuarterMonth = Math.floor(startMonth / 3) * 3;
+        const currentDate = new Date(Date.UTC(startDate.getUTCFullYear(), startQuarterMonth, 1));
+
+        for (let i = 0; i < count; i++) {
+            const year = currentDate.getUTCFullYear();
+            const quarterNum = Math.floor(currentDate.getUTCMonth() / 3) + 1;
+            
+            const qStartDate = new Date(Date.UTC(year, (quarterNum - 1) * 3, 1));
+            const qEndDate = new Date(Date.UTC(year, quarterNum * 3, 0));
+
+            quarters.push({
+                name: `Q${quarterNum}`,
+                year: year,
+                startDate: qStartDate.toISOString().split('T')[0],
+                endDate: qEndDate.toISOString().split('T')[0]
+            });
+            
+            currentDate.setUTCMonth(currentDate.getUTCMonth() + 3);
+        }
+        return quarters;
+    }
+
+    function renderActiveQuarterDisplay() {
+        const activeBtn = quarterFilterContainer.querySelector('.active');
+        const activeDisplay = document.createElement('div');
+        activeDisplay.className = 'active-display';
+
+        if (activeBtn.dataset.filterType === 'all') {
+            activeDisplay.innerHTML = `<button class="quarter-filter-btn active font-semibold py-1 px-3 rounded-md text-sm w-full text-left">ALL</button>`;
+        } else {
+            const year = new Date(activeBtn.dataset.startDate + 'T00:00:00Z').getUTCFullYear();
+            activeDisplay.innerHTML = `
+                <span class="year-label font-bold text-gray-500 text-sm mr-1">'${year.toString().substring(2)}</span>
+                <button class="quarter-filter-btn active font-semibold py-1 px-3 rounded-md text-sm">${activeBtn.textContent}</button>
+            `;
+        }
+        
+        const existingDisplay = quarterFilterContainer.querySelector('.active-display');
+        if (existingDisplay) {
+            existingDisplay.remove();
+        }
+        quarterFilterContainer.prepend(activeDisplay);
+    }
+
+    function renderQuarterFilterBar() {
+        quarterFilterContainer.innerHTML = '';
+        let currentYear = null;
+
+        const allButton = document.createElement('button');
+        allButton.textContent = 'ALL';
+        allButton.className = 'quarter-filter-btn active font-semibold py-1 px-3 rounded-md text-sm';
+        allButton.dataset.filterType = 'all';
+        quarterFilterContainer.appendChild(allButton);
+
+        const quarters = generateQuarters(planConfig.planStartDate, planConfig.numberOfQuarters);
+        quarters.forEach(q => {
+            if (q.year !== currentYear) {
+                currentYear = q.year;
+                const yearLabel = document.createElement('span');
+                yearLabel.className = 'font-bold text-gray-500 text-sm ml-2 mr-1 w-full md:w-auto'; // Flexbox friendly
+                yearLabel.textContent = `'${currentYear.toString().substring(2)}`;
+                quarterFilterContainer.appendChild(yearLabel);
+            }
+
+            const qButton = document.createElement('button');
+            qButton.textContent = q.name;
+            qButton.className = 'quarter-filter-btn font-semibold py-1 px-3 rounded-md text-sm';
+            qButton.dataset.startDate = q.startDate;
+            qButton.dataset.endDate = q.endDate;
+            qButton.dataset.filterType = 'quarter';
+            quarterFilterContainer.appendChild(qButton);
+        });
+        renderActiveQuarterDisplay(); // Initial render for collapsed view
+    }
+
+    function toggleQuarterFilter(expand) {
+        isQuarterFilterExpanded = expand;
+        if (isQuarterFilterExpanded) {
+            quarterFilterBar.classList.add('expanded');
+            quarterFilterBar.classList.remove('collapsed');
+        } else {
+            quarterFilterBar.classList.remove('expanded');
+            quarterFilterBar.classList.add('collapsed');
+            renderActiveQuarterDisplay();
+        }
+    }
+
+    quarterFilterBar.addEventListener('click', (event) => {
+        if (!isQuarterFilterExpanded) {
+            toggleQuarterFilter(true);
+            return;
+        }
+
+        const clickedButton = event.target.closest('button');
+        if (clickedButton && !clickedButton.classList.contains('active')) {
+            quarterFilterContainer.querySelectorAll('button').forEach(btn => btn.classList.remove('active'));
+            clickedButton.classList.add('active');
+
+            const { filterType, startDate, endDate } = clickedButton.dataset;
+            fetchDashboardData(filterType === 'all' ? null : startDate, filterType === 'all' ? null : endDate);
+            
+            setTimeout(() => toggleQuarterFilter(false), 100);
+        }
+    });
+
+    // Close when clicking outside
+    document.addEventListener('click', (event) => {
+        if (isQuarterFilterExpanded && !quarterFilterBar.contains(event.target)) {
+            toggleQuarterFilter(false);
+        }
+    });
+    // --- End of Quarter Filter Logic ---
 
     // --- Element Selectors ---
     const brokenNetworksCard = document.getElementById('broken-networks-card');
@@ -183,6 +307,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Initial Setup ---
     showDashboard();
+    renderQuarterFilterBar();
     fetchDashboardData();
     fetchAndDisplayNews();
     renderChatHistory();
@@ -326,12 +451,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (articles.length > 1) {
             const prevArrow = document.createElement('button');
             prevArrow.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>';
-            prevArrow.classList.add('carousel-arrow', 'absolute', 'top-1-2', 'left-2', 'transform', '-translate-y-1/2', 'bg-white', 'bg-opacity-75', 'rounded-full', 'p-1', 'text-gray-700', 'hover:bg-opacity-100');
+            prevArrow.classList.add('carousel-arrow', 'absolute', 'top-20', 'left-2', 'transform', '-translate-y-1/2', 'bg-white', 'bg-opacity-75', 'rounded-full', 'p-1', 'text-gray-700', 'hover:bg-opacity-100');
             prevArrow.addEventListener('click', () => showSlide(carouselEl, getCurrentIndex(carouselEl) - 1));
             
             const nextArrow = document.createElement('button');
             nextArrow.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>';
-            nextArrow.classList.add('carousel-arrow', 'absolute', 'top-1-2', 'right-2', 'transform', '-translate-y-1/2', 'bg-white', 'bg-opacity-75', 'rounded-full', 'p-1', 'text-gray-700', 'hover:bg-opacity-100');
+            nextArrow.classList.add('carousel-arrow', 'absolute', 'top-20', 'right-2', 'transform', '-translate-y-1/2', 'bg-white', 'bg-opacity-75', 'rounded-full', 'p-1', 'text-gray-700', 'hover:bg-opacity-100');
             nextArrow.addEventListener('click', () => showSlide(carouselEl, getCurrentIndex(carouselEl) + 1));
             
             carouselEl.appendChild(prevArrow);
@@ -379,7 +504,13 @@ document.addEventListener('DOMContentLoaded', () => {
             });
     }
 
-    function fetchDashboardData() {
+    function fetchDashboardData(startDate = null, endDate = null) {
+        if (startDate && endDate) {
+            console.log(`Fetching dashboard data for quarter: ${startDate} to ${endDate}`);
+        } else {
+            console.log("Fetching all dashboard data (no quarter filter).");
+        }
+
         fetch('http://127.0.0.1:5000/api/dashboard')
             .then(response => response.json())
             .then(data => {
