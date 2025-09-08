@@ -1,5 +1,5 @@
 # app.py
-from flask import Flask, jsonify, request, send_from_directory # Added send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
 from neo4j import GraphDatabase
 from flask_cors import CORS
 import random
@@ -7,14 +7,19 @@ import os
 from dotenv import load_dotenv
 import google.generativeai as genai
 import requests
+import json
 
 # Load environment variables from .env file
 load_dotenv()
 
 # --- Configure APIs ---
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-genai.configure(api_key=GEMINI_API_KEY)
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
+
+# --- In-Memory Cache for AI Analysis ---
+NEWS_ANALYSIS_CACHE = {}
 
 # Initialize the Flask application
 app = Flask(__name__)
@@ -84,7 +89,6 @@ def get_network_for_sku(sku_id: str) -> list:
     except Exception as e:
         return [{'error': str(e)}]
 
-# --- START: New LLM Tools for Affected Orders ---
 def get_affected_orders_summary() -> str:
     """Returns a summary of the total count and quantity of affected customer and forecast orders."""
     try:
@@ -130,8 +134,6 @@ def get_affected_forecast_orders() -> str:
             return "Here are the top affected forecast orders:\n" + "\n".join(orders) if orders else "No affected forecast orders were found."
     except Exception as e:
         return f"Database error: {e}"
-
-# --- END: New LLM Tools ---
         
 available_tools = {
     "get_bottleneck_skus_from_db": get_bottleneck_skus_from_db, 
@@ -143,50 +145,98 @@ available_tools = {
     "get_affected_forecast_orders": get_affected_forecast_orders
 }
 
-# --- News Feed Endpoint ---
+# --- News Feed Logic ---
 def fetch_news_for_category(query, api_key):
-    """Helper function to fetch news for a specific query."""
+    if not api_key:
+        print(f"WARNING: NEWS_API_KEY not found. Loading mock data for query: '{query}'")
+        try:
+            with open('mock-news.json', 'r') as f:
+                return json.load(f).get("articles", [])
+        except FileNotFoundError:
+            print("ERROR: mock-news.json not found. Returning empty list.")
+            return []
+
     base_url = "https://newsapi.org/v2/everything"
-    params = {
-        'q': f"(semiconductor OR chip) AND ({query})",
-        'sortBy': 'relevancy',
-        'language': 'en',
-        'pageSize': 5, # Fetch 5 articles per category for the carousel
-        'apiKey': api_key
-    }
+    params = { 'q': f"(semiconductor OR chip) AND ({query})", 'sortBy': 'relevancy', 'language': 'en', 'pageSize': 5, 'apiKey': api_key }
     try:
         response = requests.get(base_url, params=params)
         response.raise_for_status()
         articles = response.json().get("articles", [])
         return [
             {
-                "title": article.get("title"),
-                "url": article.get("url"),
-                "source": article.get("source", {}).get("name"),
+                "title": article.get("title"), "description": article.get("description"),
+                "url": article.get("url"), "source": article.get("source", {}).get("name"), 
                 "imageUrl": article.get("urlToImage")
             }
-            for article in articles if article.get("title") and article.get("urlToImage")
+            for article in articles if article.get("title") and article.get("url")
         ]
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching news for query '{query}': {e}")
-        return []
+        print(f"Error fetching live news for query '{query}': {e}. Loading mock data.")
+        try:
+            with open('mock-news.json', 'r') as f:
+                return json.load(f).get("articles", [])
+        except FileNotFoundError:
+            print("ERROR: mock-news.json not found. Returning empty list.")
+            return []
 
 @app.route('/api/supply-chain-news', methods=['GET'])
 def get_supply_chain_news():
-    if not NEWS_API_KEY:
-        return jsonify({'error': 'News API key is not configured.'}), 500
-
     categories = {
-        "supplier": "supplier OR factory OR manufacturing",
-        "logistics": "logistics OR shipping OR port OR freight",
-        "market": "demand OR market OR sales",
-        "geopolitical": "geopolitical OR tariff OR trade OR government",
+        "supplier": "supplier OR factory OR manufacturing", "logistics": "logistics OR shipping OR port OR freight",
+        "market": "demand OR market OR sales", "geopolitical": "geopolitical OR tariff OR trade OR government",
         "compliance": "compliance OR regulation OR environment"
     }
-    
     news_results = {key: fetch_news_for_category(query, NEWS_API_KEY) for key, query in categories.items()}
-    
     return jsonify(news_results)
+
+@app.route('/api/analyze-article', methods=['POST'])
+def analyze_article():
+    data = request.json
+    article = data.get('article', {})
+    
+    title = article.get('title')
+    text_to_analyze = article.get('description') or title
+    
+    default_impacts = {
+        "Supply Availability": "Neutral", "Raw Material Cost": "Neutral",
+        "Logistics & Freight Cost": "Neutral", "Market Demand": "Neutral", "OTIF": "Neutral"
+    }
+
+    if not text_to_analyze: return jsonify(default_impacts)
+    
+    cache_key = title 
+    if not GEMINI_API_KEY:
+        print("WARNING: GEMINI_API_KEY not found. Skipping AI analysis.")
+        return jsonify(default_impacts)
+    if cache_key in NEWS_ANALYSIS_CACHE:
+        return jsonify(NEWS_ANALYSIS_CACHE[cache_key])
+
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    prompt = f"""You are a supply chain risk analyst for Intel, a major US semiconductor manufacturer. Your task is to read a news summary and determine its likely impact (Positive, Negative, or Neutral) on five specific supply chain KPIs. Respond only with a JSON object.
+The KPIs are:
+1. Supply Availability: Ability to get raw materials from suppliers to US factories. Negative for disruptions, Positive for new sources.
+2. Raw Material Cost: Cost of components. Negative for tariffs/inflation, Positive for subsidies/discounts.
+3. Logistics & Freight Cost: Cost to ship materials internationally. Negative for port congestion, Positive for new shipping lanes.
+4. Market Demand: Customer demand for finished goods. Positive for strong sales, Negative for recession fears.
+5. OTIF (On-Time In-Full): Ability to deliver finished chips on time. Negative impact on Supply or Logistics often causes a Negative impact here.
+News Summary: "{text_to_analyze}"
+Your Response (JSON only):"""
+    
+    try:
+        response = model.generate_content(prompt)
+        cleaned_text = response.text.strip().replace("```json", "").replace("```", "").strip()
+        parsed_response = json.loads(cleaned_text)
+
+        final_impacts = default_impacts.copy()
+        if isinstance(parsed_response, dict):
+            final_impacts.update(parsed_response)
+
+        NEWS_ANALYSIS_CACHE[cache_key] = final_impacts
+        return jsonify(final_impacts)
+    except Exception as e:
+        print(f"Error analyzing content with AI: '{text_to_analyze[:50]}...': {e}. Returning neutral impacts.")
+        NEWS_ANALYSIS_CACHE[cache_key] = default_impacts
+        return jsonify(default_impacts)
 
 # --- Other API Endpoints ---
 @app.route('/api/dashboard', methods=['GET'])
@@ -194,33 +244,14 @@ def get_dashboard_data():
     try:
         driver = get_db()
         with driver.session(database=NEO4J_DATABASE) as session:
-            cust_order_query = """
-            LOAD CSV WITH HEADERS FROM 'file:///custorder.csv' AS row
-            WITH row, toFloat(row.Qty) AS qty
-            WHERE trim(row.Item) <> '' AND trim(row.Loc) <> ''
-            MATCH (s:SKU {sku_id: trim(row.Item) + '@' + trim(row.Loc)})
-            WHERE s.demand_sku = true AND s.broken_bom = true
-            RETURN count(row) AS orderCount, sum(qty) AS totalQty
-            """
+            cust_order_query = "LOAD CSV WITH HEADERS FROM 'file:///custorder.csv' AS row WITH row, toFloat(row.Qty) AS qty WHERE trim(row.Item) <> '' AND trim(row.Loc) <> '' MATCH (s:SKU {sku_id: trim(row.Item) + '@' + trim(row.Loc)}) WHERE s.demand_sku = true AND s.broken_bom = true RETURN count(row) AS orderCount, sum(qty) AS totalQty"
             cust_result = session.run(cust_order_query).single()
-            cust_orders_count = cust_result.get('orderCount', 0) or 0
-            cust_orders_qty = cust_result.get('totalQty', 0) or 0
-
-            fcst_order_query = """
-            LOAD CSV WITH HEADERS FROM 'file:///fcstorder.csv' AS row
-            WITH row, toFloat(row.Qty) AS qty
-            WHERE trim(row.Item) <> '' AND trim(row.Loc) <> ''
-            MATCH (s:SKU {sku_id: trim(row.Item) + '@' + trim(row.Loc)})
-            WHERE s.demand_sku = true AND s.broken_bom = true
-            RETURN count(row) AS orderCount, sum(qty) AS totalQty
-            """
+            cust_orders_count = cust_result.get('orderCount', 0) or 0; cust_orders_qty = cust_result.get('totalQty', 0) or 0
+            fcst_order_query = "LOAD CSV WITH HEADERS FROM 'file:///fcstorder.csv' AS row WITH row, toFloat(row.Qty) AS qty WHERE trim(row.Item) <> '' AND trim(row.Loc) <> '' MATCH (s:SKU {sku_id: trim(row.Item) + '@' + trim(row.Loc)}) WHERE s.demand_sku = true AND s.broken_bom = true RETURN count(row) AS orderCount, sum(qty) AS totalQty"
             fcst_result = session.run(fcst_order_query).single()
-            fcst_orders_count = fcst_result.get('orderCount', 0) or 0
-            fcst_orders_qty = fcst_result.get('totalQty', 0) or 0
-
+            fcst_orders_count = fcst_result.get('orderCount', 0) or 0; fcst_orders_qty = fcst_result.get('totalQty', 0) or 0
             total_affected_orders_count = cust_orders_count + fcst_orders_count
             total_affected_orders_qty = cust_orders_qty + fcst_orders_qty
-
             res_count_result = session.run("MATCH (r:Res {bottleneck: true}) RETURN count(r) AS count").single()
             sku_count_result = session.run("MATCH (s:SKU {bottleneck: true}) RETURN count(s) AS count").single()
             bottleneck_res_count = res_count_result['count'] if res_count_result else 0
@@ -229,20 +260,7 @@ def get_dashboard_data():
             broken_fg_result = session.run("MATCH (s:SKU {broken_bom: true, demand_sku: true}) RETURN count(s) AS count").single()
             broken_skus_count = broken_total_result['count'] if broken_total_result else 0
             broken_fg_count = broken_fg_result['count'] if broken_fg_result else 0
-        
-        data = {
-            'totalDemandAtRisk': random.randint(100000, 999999),
-            'affectedOrdersCount': total_affected_orders_count,
-            'affectedOrdersQty': total_affected_orders_qty,
-            'affectedCustOrdersCount': cust_orders_count,
-            'affectedCustOrdersQty': cust_orders_qty,
-            'affectedFcstOrdersCount': fcst_orders_count,
-            'affectedFcstOrdersQty': fcst_orders_qty,
-            'brokenSkusCount': broken_skus_count,
-            'brokenFgNetworksCount': broken_fg_count,
-            'bottleneckResourcesCount': bottleneck_res_count,
-            'bottleneckSkusCount': bottleneck_sku_count
-        }
+        data = { 'totalDemandAtRisk': random.randint(100000, 999999), 'affectedOrdersCount': total_affected_orders_count, 'affectedOrdersQty': total_affected_orders_qty, 'affectedCustOrdersCount': cust_orders_count, 'affectedCustOrdersQty': cust_orders_qty, 'affectedFcstOrdersCount': fcst_orders_count, 'affectedFcstOrdersQty': fcst_orders_qty, 'brokenSkusCount': broken_skus_count, 'brokenFgNetworksCount': broken_fg_count, 'bottleneckResourcesCount': bottleneck_res_count, 'bottleneckSkusCount': bottleneck_sku_count }
         return jsonify(data)
     except Exception as e:
         print(f"An error occurred in get_dashboard_data: {e}")
@@ -354,17 +372,7 @@ def get_affected_cust_orders():
     try:
         driver = get_db()
         with driver.session(database=NEO4J_DATABASE) as session:
-            query = """
-            LOAD CSV WITH HEADERS FROM 'file:///custorder.csv' AS row
-            WITH row, trim(row.Item) AS item, trim(row.Loc) AS loc, toFloat(row.Qty) AS qty,
-                 trim(row.Item) + '@' + trim(row.Loc) AS sku_id
-            WHERE item <> '' AND loc <> ''
-            MATCH (s:SKU {sku_id: sku_id})
-            WHERE s.demand_sku = true AND s.broken_bom = true
-            RETURN s.sku_id AS sku_id, row AS full_record
-            ORDER BY s.sku_id, qty DESC
-            LIMIT 100;
-            """
+            query = "LOAD CSV WITH HEADERS FROM 'file:///custorder.csv' AS row WITH row, trim(row.Item) AS item, trim(row.Loc) AS loc, toFloat(row.Qty) AS qty, trim(row.Item) + '@' + trim(row.Loc) AS sku_id WHERE item <> '' AND loc <> '' MATCH (s:SKU {sku_id: sku_id}) WHERE s.demand_sku = true AND s.broken_bom = true RETURN s.sku_id AS sku_id, row AS full_record ORDER BY s.sku_id, qty DESC LIMIT 100;"
             result = session.run(query)
             return jsonify([serialize_record(record) for record in result])
     except Exception as e:
@@ -375,17 +383,7 @@ def get_affected_fcst_orders():
     try:
         driver = get_db()
         with driver.session(database=NEO4J_DATABASE) as session:
-            query = """
-            LOAD CSV WITH HEADERS FROM 'file:///fcstorder.csv' AS row
-            WITH row, trim(row.Item) AS item, trim(row.Loc) AS loc, toFloat(row.Qty) AS qty,
-                 trim(row.Item) + '@' + trim(row.Loc) AS sku_id
-            WHERE item <> '' AND loc <> ''
-            MATCH (s:SKU {sku_id: sku_id})
-            WHERE s.demand_sku = true AND s.broken_bom = true
-            RETURN s.sku_id AS sku_id, row AS full_record
-            ORDER BY s.sku_id, qty DESC
-            LIMIT 100;
-            """
+            query = "LOAD CSV WITH HEADERS FROM 'file:///fcstorder.csv' AS row WITH row, trim(row.Item) AS item, trim(row.Loc) AS loc, toFloat(row.Qty) AS qty, trim(row.Item) + '@' + trim(row.Loc) AS sku_id WHERE item <> '' AND loc <> '' MATCH (s:SKU {sku_id: sku_id}) WHERE s.demand_sku = true AND s.broken_bom = true RETURN s.sku_id AS sku_id, row AS full_record ORDER BY s.sku_id, qty DESC LIMIT 100;"
             result = session.run(query)
             return jsonify([serialize_record(record) for record in result])
     except Exception as e:
@@ -398,12 +396,7 @@ def get_affected_cust_orders_by_sku():
         sku_id = data.get('sku_id')
         driver = get_db()
         with driver.session(database=NEO4J_DATABASE) as session:
-            query = """
-            LOAD CSV WITH HEADERS FROM 'file:///custorder.csv' AS row
-            WITH row WHERE (trim(row.Item) + '@' + trim(row.Loc)) = $sku_id
-            RETURN $sku_id AS sku_id, row AS full_record
-            ORDER BY toFloat(row.Qty) DESC
-            """
+            query = "LOAD CSV WITH HEADERS FROM 'file:///custorder.csv' AS row WITH row WHERE (trim(row.Item) + '@' + trim(row.Loc)) = $sku_id RETURN $sku_id AS sku_id, row AS full_record ORDER BY toFloat(row.Qty) DESC"
             result = session.run(query, sku_id=sku_id)
             return jsonify([serialize_record(record) for record in result])
     except Exception as e:
@@ -416,12 +409,7 @@ def get_affected_fcst_orders_by_sku():
         sku_id = data.get('sku_id')
         driver = get_db()
         with driver.session(database=NEO4J_DATABASE) as session:
-            query = """
-            LOAD CSV WITH HEADERS FROM 'file:///fcstorder.csv' AS row
-            WITH row WHERE (trim(row.Item) + '@' + trim(row.Loc)) = $sku_id
-            RETURN $sku_id AS sku_id, row AS full_record
-            ORDER BY toFloat(row.Qty) DESC
-            """
+            query = "LOAD CSV WITH HEADERS FROM 'file:///fcstorder.csv' AS row WITH row WHERE (trim(row.Item) + '@' + trim(row.Loc)) = $sku_id RETURN $sku_id AS sku_id, row AS full_record ORDER BY toFloat(row.Qty) DESC"
             result = session.run(query, sku_id=sku_id)
             return jsonify([serialize_record(record) for record in result])
     except Exception as e:
@@ -432,13 +420,12 @@ def handle_chat():
     if request.method == 'OPTIONS':
         return '', 204
     try:
+        if not GEMINI_API_KEY:
+            return jsonify({'response_type': 'text', 'data': "Error: GEMINI_API_KEY is not configured on the server."}), 500
         data = request.json
         user_message = data.get('message', '')
-                                                
-                                               
         system_instruction = "You are a supply chain assistant. Your primary function is to use the provided tools to answer user questions about supply chain data. If a user asks to see, show, draw, or get a network or graph, you must instruct them to use the 'BOM Viewer' for that functionality. For other questions, use the available tools. Only answer conversationally if no tool is appropriate for the user's query."
         model = genai.GenerativeModel('gemini-1.5-flash', tools=list(available_tools.values()), system_instruction=system_instruction)
-                                                        
         chat = model.start_chat(enable_automatic_function_calling=True)
         response = chat.send_message(user_message)
         return jsonify({'response_type': 'text', 'data': response.text.replace('\\_', '_')})
@@ -448,15 +435,11 @@ def handle_chat():
 # --- Static File Serving ---
 @app.route('/')
 def serve_index():
-    """Serves the index.html file for the root URL."""
     return send_from_directory('.', 'index.html')
 
 @app.route('/<path:path>')
 def serve_static_files(path):
-    """Serves static files like JS, CSS, and images."""
     return send_from_directory('.', path)
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
- 
-                                                                                                                                                                                                                                                              

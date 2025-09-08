@@ -39,33 +39,88 @@
         .path{ stroke-linecap:round; }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* --- Carousel Styles --- */
-        .news-carousel .carousel-slide { display: none; }
-        .news-carousel .carousel-slide.active { display: block; }
-        .carousel-arrow {
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-        .news-carousel:hover .carousel-arrow {
-            opacity: 1;
-        }
         #main-cards-container.hidden {
             display: none;
         }
 
-        /* --- Quarter Filter Styles --- */
+        #news-matrix-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+        #news-matrix-table th, #news-matrix-table td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+            word-wrap: break-word;
+        }
+        #news-matrix-table th {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: #4b5563;
+            background-color: #f9fafb;
+            cursor: pointer;
+        }
+        /* START: Column Width Styling */
+        .article-column { width: 35%; }
+        .category-column { width: 15%; }
+        .kpi-column { width: 10%; text-align: center; }
+        /* END: Column Width Styling */
+        
+        #news-matrix-table td {
+            font-size: 14px;
+        }
+        .article-title-cell a {
+            font-weight: 600;
+            color: #1f2937;
+            text-decoration: none;
+        }
+        .article-title-cell a:hover {
+            color: #3b82f6;
+        }
+        .article-source-cell {
+            font-size: 12px;
+            color: #6b7280;
+        }
+        .kpi-cell {
+            text-align: center;
+        }
+        
+        .kpi-loader-small {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(0,0,0,.1);
+            border-radius: 50%;
+            border-top-color: #4f46e5;
+            animation: kpi-spin 1s ease-in-out infinite;
+        }
+        @keyframes kpi-spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .indicator-positive { color: #16a34a; }
+        .indicator-negative { color: #dc2626; }
+        .indicator-neutral {
+            color: #4b5563;
+            font-weight: 800;
+            font-size: 1.25rem;
+            line-height: 1;
+        }
+
         .quarter-filter-btn {
-            background-color: #e5e7eb; /* gray-200 */
-            color: #374151; /* gray-700 */
+            background-color: #e5e7eb;
+            color: #374151;
             transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
             flex-shrink: 0;
         }
         .quarter-filter-btn:hover {
-            background-color: #d1d5db; /* gray-300 */
+            background-color: #d1d5db;
         }
         .quarter-filter-btn.active {
-            background-color: #4f46e5; /* indigo-600 */
-            color: #ffffff; /* white */
+            background-color: #4f46e5;
+            color: #ffffff;
         }
         
         #quarter-filter-bar {
@@ -76,25 +131,21 @@
             transition: max-height 0.5s ease-in-out;
             overflow: hidden;
             cursor: pointer;
-            max-height: 40px; /* Collapsed height */
+            max-height: 40px;
         }
-
         #quarter-filter-bar.expanded {
-            max-height: 200px; /* Expanded height */
+            max-height: 200px;
             cursor: default;
         }
-
         #quarter-filter-container {
             padding: 4px;
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
         }
-
         #quarter-filter-bar.collapsed #quarter-filter-container > *:not(.active-display) {
             display: none;
         }
-
         .active-display {
             display: flex;
             align-items: center;
@@ -103,7 +154,6 @@
             padding: 0 8px;
         }
         .active-display .year-label { margin-left: 0; }
-        
         #quarter-filter-bar.expanded .active-display {
             display: none;
         }
@@ -150,13 +200,8 @@
             </div>
 
             <div id="dashboard-content-area">
-                <section id="news-feed-section" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <div id="news-supplier" class="news-carousel bg-white rounded-xl shadow-lg overflow-hidden flex flex-col h-full relative"><div class="carousel-slides-container flex-grow"></div><div class="carousel-dots p-3 text-center"></div></div>
-                    <div id="news-logistics" class="news-carousel bg-white rounded-xl shadow-lg overflow-hidden flex flex-col h-full relative"><div class="carousel-slides-container flex-grow"></div><div class="carousel-dots p-3 text-center"></div></div>
-                    <div id="news-market" class="news-carousel bg-white rounded-xl shadow-lg overflow-hidden flex flex-col h-full relative"><div class="carousel-slides-container flex-grow"></div><div class="carousel-dots p-3 text-center"></div></div>
-                    <div id="news-geopolitical" class="news-carousel bg-white rounded-xl shadow-lg overflow-hidden flex flex-col h-full relative"><div class="carousel-slides-container flex-grow"></div><div class="carousel-dots p-3 text-center"></div></div>
-                    <div id="news-compliance" class="news-carousel bg-white rounded-xl shadow-lg overflow-hidden flex flex-col h-full relative"><div class="carousel-slides-container flex-grow"></div><div class="carousel-dots p-3 text-center"></div></div>
-                </section>
+                <section id="news-matrix-section" class="bg-white rounded-xl shadow-lg overflow-x-auto">
+                    </section>
                 
                 <div id="affected-orders-section" class="hidden">
                     <div class="max-w-2xl">

@@ -195,7 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const dashboardSection = document.getElementById('dashboard-section');
     const bomViewerWrapper = document.getElementById('bom-viewer-wrapper');
     const chatSection = document.getElementById('chat-section');
-    const newsFeedSection = document.getElementById('news-feed-section');
+    const newsMatrixSection = document.getElementById('news-matrix-section');
     const brokenNetworksSection = document.getElementById('broken-networks-section');
     const bottlenecksSubcardsSection = document.getElementById('bottlenecks-subcards-section');
     const resultsContainer = document.getElementById('results-container');
@@ -230,7 +230,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- View Management Functions ---
     function showDashboardContent(elementToShow) {
-        const contentPanels = [newsFeedSection, brokenNetworksSection, bottlenecksSubcardsSection, resultsContainer, affectedOrdersSection];
+        const contentPanels = [newsMatrixSection, brokenNetworksSection, bottlenecksSubcardsSection, resultsContainer, affectedOrdersSection];
         contentPanels.forEach(panel => { if (panel) panel.classList.add('hidden'); });
         if (elementToShow) { elementToShow.classList.remove('hidden'); }
     }
@@ -238,7 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
         dashboardSection.classList.remove('hidden');
         bomViewerWrapper.classList.add('hidden');
         chatSection.classList.add('hidden');
-        showDashboardContent(newsFeedSection); 
+        showDashboardContent(newsMatrixSection);
     }
     function showBomViewer() {
         dashboardSection.classList.add('hidden');
@@ -408,102 +408,137 @@ document.addEventListener('DOMContentLoaded', () => {
     chatSendBtn.addEventListener('click', handleChatSubmit);
     chatInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') handleChatSubmit(); });
     
-    // --- News Feed Logic with Carousel ---
-    function createCarousel(carouselEl, articles, categoryTitle, iconSvg) {
-        const slidesContainer = carouselEl.querySelector('.carousel-slides-container');
-        const dotsContainer = carouselEl.querySelector('.carousel-dots');
-        slidesContainer.innerHTML = '';
-        dotsContainer.innerHTML = '';
+    // --- Asynchronous News Loading and Rendering ---
+    const kpiHeaders = ["Supply Availability", "Raw Material Cost", "Logistics & Freight Cost", "Market Demand", "OTIF"];
 
-        if (!articles || articles.length === 0) {
-            slidesContainer.innerHTML = `
-                <div class="p-4">
-                    <div class="flex items-center mb-2">${iconSvg}<h4 class="font-bold text-gray-800">${categoryTitle}</h4></div>
-                    <p class="text-sm text-gray-500">No recent articles found for this category.</p>
-                </div>`;
+    const KPI_BG_COLORS = {
+        Positive: 'bg-green-50',
+        Negative: 'bg-red-50',
+        Neutral: 'bg-white'
+    };
+    
+    function createKpiCellHtml(impact) {
+        const safeImpact = (impact === 'Positive' || impact === 'Negative') ? impact : 'Neutral';
+        const indicatorClass = `indicator-${safeImpact.toLowerCase()}`;
+        
+        if (safeImpact === 'Neutral') {
+            return `<span class="indicator-neutral">-</span>`;
+        }
+        
+        const path = safeImpact === 'Positive' ? 'M12 4l8 8H4l8-8z' : 'M12 20l-8-8h16l-8 8z';
+        return `<svg class="h-4 w-4 inline-block ${indicatorClass}" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="${path}"></path>
+                </svg>`;
+    }
+
+    function renderNewsMatrix(allArticles) {
+        newsMatrixSection.innerHTML = '';
+        if (!allArticles || allArticles.length === 0) {
+            newsMatrixSection.innerHTML = `<p class="text-gray-500 p-4">No news articles found.</p>`;
             return;
         }
 
-        articles.forEach((article, index) => {
-            const slide = document.createElement('div');
-            slide.classList.add('carousel-slide', 'h-full', 'flex', 'flex-col');
-            if (index === 0) slide.classList.add('active');
-            slide.innerHTML = `
-                <a href="${article.url}" target="_blank" rel="noopener noreferrer" class="block">
-                    <img src="${article.imageUrl}" alt="${article.title}" class="w-full h-40 object-cover">
-                </a>
-                <div class="p-4 flex flex-col flex-grow">
-                    <div class="flex items-center mb-2">${iconSvg}<h4 class="font-bold text-gray-800">${categoryTitle}</h4></div>
-                    <a href="${article.url}" target="_blank" rel="noopener noreferrer" class="block flex-grow">
-                        <p class="text-sm text-gray-600 hover:text-blue-600">${article.title}</p>
-                    </a>
-                    <p class="text-xs text-gray-400 mt-2">${article.source || 'Unknown Source'}</p>
-                </div>`;
-            slidesContainer.appendChild(slide);
+        const table = document.createElement('table');
+        table.id = 'news-matrix-table';
+        table.className = 'min-w-full';
+        
+        const thead = document.createElement('thead');
+        thead.innerHTML = `<tr>
+            <th class="article-column">Article</th>
+            <th class="category-column">Category</th>
+            ${kpiHeaders.map(name => `<th class="kpi-column">${name}</th>`).join('')}
+        </tr>`;
+        
+        const tbody = document.createElement('tbody');
+        allArticles.forEach((article, index) => {
+            const row = document.createElement('tr');
+            row.id = `article-row-${index}`;
+            
+            const articleCell = document.createElement('td');
+            articleCell.className = 'article-column article-title-cell';
+            articleCell.innerHTML = `<a href="${article.url}" target="_blank" rel="noopener noreferrer">${article.title}</a>`;
+            row.appendChild(articleCell);
 
-            const dot = document.createElement('button');
-            dot.classList.add('h-2', 'w-2', 'rounded-full', 'bg-gray-300', 'mx-1', 'focus:outline-none');
-            if (index === 0) dot.classList.add('bg-gray-800');
-            dot.addEventListener('click', () => showSlide(carouselEl, index));
-            dotsContainer.appendChild(dot);
+            const categoryCell = document.createElement('td');
+            categoryCell.className = 'category-column';
+            categoryCell.textContent = article.category.charAt(0).toUpperCase() + article.category.slice(1);
+            row.appendChild(categoryCell);
+
+            kpiHeaders.forEach(header => {
+                const kpiCell = document.createElement('td');
+                kpiCell.className = 'kpi-cell kpi-column';
+                kpiCell.id = `kpi-placeholder-matrix-${index}-${header.replace(/\s+/g, '')}`;
+                kpiCell.innerHTML = `<div class="kpi-loader-small"></div>`;
+                row.appendChild(kpiCell);
+            });
+
+            tbody.appendChild(row);
         });
 
-        if (articles.length > 1) {
-            const prevArrow = document.createElement('button');
-            prevArrow.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>';
-            prevArrow.classList.add('carousel-arrow', 'absolute', 'top-20', 'left-2', 'transform', '-translate-y-1/2', 'bg-white', 'bg-opacity-75', 'rounded-full', 'p-1', 'text-gray-700', 'hover:bg-opacity-100');
-            prevArrow.addEventListener('click', () => showSlide(carouselEl, getCurrentIndex(carouselEl) - 1));
+        table.appendChild(thead);
+        table.appendChild(tbody);
+        newsMatrixSection.appendChild(table);
+    }
+    
+    function updateMatrixCells(matrixIndex, kpiData) {
+        kpiHeaders.forEach(header => {
+            const matrixCell = document.getElementById(`kpi-placeholder-matrix-${matrixIndex}-${header.replace(/\s+/g, '')}`);
+             if (matrixCell) {
+                 const impact = kpiData[header] || 'Neutral';
+                 matrixCell.className = `kpi-cell kpi-column ${KPI_BG_COLORS[impact]}`;
+                 matrixCell.innerHTML = createKpiCellHtml(impact);
+             }
+        });
+    }
+
+    async function fetchAndDisplayNews() {
+        try {
+            const response = await fetch('http://127.0.0.1:5000/api/supply-chain-news');
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const newsData = await response.json();
             
-            const nextArrow = document.createElement('button');
-            nextArrow.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>';
-            nextArrow.classList.add('carousel-arrow', 'absolute', 'top-20', 'right-2', 'transform', '-translate-y-1/2', 'bg-white', 'bg-opacity-75', 'rounded-full', 'p-1', 'text-gray-700', 'hover:bg-opacity-100');
-            nextArrow.addEventListener('click', () => showSlide(carouselEl, getCurrentIndex(carouselEl) + 1));
-            
-            carouselEl.appendChild(prevArrow);
-            carouselEl.appendChild(nextArrow);
+            const allArticles = [];
+            let matrixIndexCounter = 0;
+            for (const category in newsData) {
+                newsData[category].forEach(article => {
+                    allArticles.push({
+                        ...article,
+                        category: category,
+                        matrixIndex: matrixIndexCounter
+                    });
+                    matrixIndexCounter++;
+                });
+            }
+
+            renderNewsMatrix(allArticles);
+
+            allArticles.forEach(article => {
+                fetch('http://127.0.0.1:5000/api/analyze-article', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ article: article })
+                })
+                .then(res => res.json())
+                .then(kpiData => {
+                    const allNeutral = Object.values(kpiData).every(val => val === 'Neutral');
+
+                    if (allNeutral) {
+                        const row = document.getElementById(`article-row-${article.matrixIndex}`);
+                        if (row) row.style.display = 'none';
+                    } else {
+                        updateMatrixCells(article.matrixIndex, kpiData);
+                    }
+                })
+                .catch(err => console.error("Error analyzing article:", article.title, err));
+            });
+
+        } catch (error) {
+            console.error('Error fetching or displaying news:', error);
+            newsMatrixSection.innerHTML = `<div class="p-4"><h4 class="font-bold text-gray-800">News Feed</h4><p class="text-sm text-red-500">Could not load news feed. Please ensure the backend server is running.</p></div>`;
         }
     }
 
-    function showSlide(carouselEl, index) {
-        const slides = carouselEl.querySelectorAll('.carousel-slide');
-        const dots = carouselEl.querySelectorAll('.carousel-dots button');
-        const numSlides = slides.length;
-
-        if (index >= numSlides) index = 0;
-        if (index < 0) index = numSlides - 1;
-
-        slides.forEach(slide => slide.classList.remove('active'));
-        dots.forEach(dot => dot.classList.replace('bg-gray-800', 'bg-gray-300'));
-        
-        slides[index].classList.add('active');
-        dots[index].classList.replace('bg-gray-300', 'bg-gray-800');
-    }
-
-    function getCurrentIndex(carouselEl) {
-        const slides = carouselEl.querySelectorAll('.carousel-slide');
-        return Array.from(slides).findIndex(slide => slide.classList.contains('active'));
-    }
-
-    function fetchAndDisplayNews() {
-        fetch('http://127.0.0.1:5000/api/supply-chain-news')
-            .then(response => response.json())
-            .then(newsData => {
-                if (newsData.error) throw new Error(newsData.error);
-                for (const category in newsData) {
-                    if (document.getElementById(`news-${category}`)) {
-                        createCarousel(document.getElementById(`news-${category}`), newsData[category], category.charAt(0).toUpperCase() + category.slice(1), '');
-                    }
-                }
-            })
-            .catch(error => {
-                console.error('Error fetching or displaying news:', error);
-                ['supplier', 'logistics', 'market', 'geopolitical', 'compliance'].forEach(category => {
-                    const el = document.getElementById(`news-${category}`);
-                    if (el) el.innerHTML = `<div class="p-4"><h4 class="font-bold text-gray-800">${category.charAt(0).toUpperCase() + category.slice(1)}</h4><p class="text-sm text-red-500">Could not load news feed.</p></div>`;
-                });
-            });
-    }
-
+    // --- Other Functions ---
     function fetchDashboardData(startDate = null, endDate = null) {
         if (startDate && endDate) {
             console.log(`Fetching dashboard data for quarter: ${startDate} to ${endDate}`);
@@ -520,16 +555,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 document.getElementById('total-demand-at-risk').textContent = `$${(data.totalDemandAtRisk || 0).toLocaleString()}`;
-                
                 const formattedQty = (data.affectedOrdersQty || 0).toLocaleString();
                 document.getElementById('affected-orders').textContent = `${(data.affectedOrdersCount || 0).toLocaleString()} - ${formattedQty}`;
-                
                 const formattedCustQty = (data.affectedCustOrdersQty || 0).toLocaleString();
                 document.getElementById('cust-orders-count').textContent = `${(data.affectedCustOrdersCount || 0).toLocaleString()} - ${formattedCustQty}`;
-                
                 const formattedFcstQty = (data.affectedFcstOrdersQty || 0).toLocaleString();
                 document.getElementById('fcst-orders-count').textContent = `${(data.affectedFcstOrdersCount || 0).toLocaleString()} - ${formattedFcstQty}`;
-
                 document.getElementById('broken-networks').textContent = (data.brokenSkusCount || 0).toLocaleString();
                 document.getElementById('broken-skus-count').textContent = (data.brokenSkusCount || 0).toLocaleString();
                 document.getElementById('broken-fg-networks-count').textContent = (data.brokenFgNetworksCount || 0).toLocaleString();
@@ -544,12 +575,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function createHeaderWithBackButton(title, backFunction) {
         const header = document.createElement('div');
         header.className = 'flex justify-between items-center mb-4';
-        
         const titleEl = document.createElement('h2');
         titleEl.className = 'text-xl font-bold text-gray-800';
         titleEl.textContent = title;
         header.appendChild(titleEl);
-
         if (backFunction) {
             const backButton = document.createElement('button');
             backButton.className = 'flex items-center p-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors';
@@ -564,7 +593,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function createResourceTable(title, data, messageIfEmpty, backFunction) {
         const renderFunc = () => {
             lastTableRenderFunction = renderFunc;
-
             resultsContainer.innerHTML = ''; 
             resultsContainer.appendChild(createHeaderWithBackButton(title, backFunction));
             if (!data || data.length === 0) {
@@ -606,7 +634,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function createSkuTable(title, data, messageIfEmpty, backFunction) {
         const renderFunc = () => {
             lastTableRenderFunction = renderFunc;
-
             resultsContainer.innerHTML = '';
             resultsContainer.appendChild(createHeaderWithBackButton(title, backFunction));
             if (!data || data.length === 0) {
@@ -624,11 +651,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (bIndex !== -1) return 1;
                 return a.localeCompare(b);
             });
-
             const table = document.createElement('table');
             table.className = 'min-w-full divide-y divide-gray-200';
             table.innerHTML = `<thead><tr>${sortedKeys.map(key => `<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">${key.replace(/_/g, ' ')}</th>`).join('')}</tr></thead>`;
-            
             const tableBody = document.createElement('tbody');
             tableBody.className = 'bg-white divide-y divide-gray-200';
             data.forEach(node => {
@@ -637,7 +662,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 row.innerHTML = sortedKeys.map(key => {
                     const value = node.properties[key];
                     let cellHtml = `<td class="px-6 py-4 whitespace-nowrap text-gray-500">${typeof value === 'object' ? JSON.stringify(value) : (value || '')}</td>`;
-
                     if (key === 'sku_id') {
                         cellHtml = `<td class="px-6 py-4 whitespace-nowrap text-gray-500"><div class="flex items-center space-x-2"><span>${value || 'N/A'}</span><button class="network-btn px-2 py-1 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600" data-sku-id="${value}">Show Network</button></div></td>`;
                     } else if (key === 'cust_demand_qty' && value > 0) {
@@ -649,10 +673,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }).join('');
                 tableBody.appendChild(row);
             });
-
             table.appendChild(tableBody);
             resultsContainer.appendChild(table);
-            
             resultsContainer.querySelectorAll('.network-btn').forEach(button => {
                 button.addEventListener('click', (event) => {
                     const skuId = event.target.getAttribute('data-sku-id');
@@ -680,37 +702,30 @@ document.addEventListener('DOMContentLoaded', () => {
     function createOrderTable(title, data, messageIfEmpty, backFunction) {
         const renderFunc = () => {
             lastTableRenderFunction = renderFunc;
-
             resultsContainer.innerHTML = '';
             resultsContainer.appendChild(createHeaderWithBackButton(title, backFunction));
             if (!data || data.length === 0) {
                 resultsContainer.innerHTML += `<p class="text-gray-500">${messageIfEmpty}</p>`;
                 return;
             }
-            
             const desiredOrder = ['item', 'loc', 'rgid', 'cgid', 'qty'];
             const originalKeys = Object.keys(data[0].properties.full_record);
-            
             originalKeys.sort((a, b) => {
                 const aLower = a.toLowerCase();
                 const bLower = b.toLowerCase();
                 const aIndex = desiredOrder.indexOf(aLower);
                 const bIndex = desiredOrder.indexOf(bLower);
-
                 if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
                 if (aIndex !== -1) return -1;
                 if (bIndex !== -1) return 1;
                 return aLower.localeCompare(bLower);
             });
             const sortedKeys = originalKeys;
-            
             const tableWrapper = document.createElement('div');
             tableWrapper.className = 'overflow-x-auto'; 
-
             const table = document.createElement('table');
             table.className = 'min-w-full divide-y divide-gray-200';
             table.innerHTML = `<thead><tr>${sortedKeys.map(key => `<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">${key.replace(/_/g, ' ')}</th>`).join('')}</tr></thead>`;
-            
             const tableBody = document.createElement('tbody');
             tableBody.className = 'bg-white divide-y divide-gray-200';
             data.forEach(record => {
@@ -723,7 +738,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 tableBody.appendChild(row);
             });
             table.appendChild(tableBody);
-            
             tableWrapper.appendChild(table);
             resultsContainer.appendChild(tableWrapper);
         };
@@ -732,7 +746,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     const renderAffectedCustOrdersForSku = (skuId) => {
-        fetch('http://127.0.0.1:5000/api/affected-cust-orders-by-sku', {
+        fetch(`http://127.0.0.1:5000/api/affected-cust-orders-by-sku`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sku_id: skuId })
@@ -745,7 +759,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const renderAffectedFcstOrdersForSku = (skuId) => {
-        fetch('http://127.0.0.1:5000/api/affected-fcst-orders-by-sku', {
+        fetch(`http://127.0.0.1:5000/api/affected-fcst-orders-by-sku`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sku_id: skuId })
@@ -757,7 +771,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
-    // Sub-Card Click Events
     const renderBrokenSkus = () => fetch('http://127.0.0.1:5000/api/broken-networks').then(r => r.json()).then(d => { createSkuTable('Broken SKUs', d, 'No broken SKUs found.', () => showDashboardContent(brokenNetworksSection)); showDashboardContent(resultsContainer); });
     const renderBottleneckResources = () => fetch('http://127.0.0.1:5000/api/bottleneck-resources').then(r => r.json()).then(d => { createResourceTable('Bottleneck Resources', d, 'No bottlenecked resources found.', () => showDashboardContent(bottlenecksSubcardsSection)); showDashboardContent(resultsContainer); });
     const renderBottleneckSkus = () => fetch('http://127.0.0.1:5000/api/bottleneck-skus').then(r => r.json()).then(d => { createSkuTable('Bottleneck SKUs', d, 'No bottlenecked SKUs found.', () => showDashboardContent(bottlenecksSubcardsSection)); showDashboardContent(resultsContainer); });
@@ -772,42 +785,17 @@ document.addEventListener('DOMContentLoaded', () => {
     custOrdersCard.addEventListener('click', renderAffectedCustOrders);
     fcstOrdersCard.addEventListener('click', renderAffectedFcstOrders);
 
-    // BOM Viewer Specific Functions
-    getSkuDetailsBtn.addEventListener('click', () => {
-        const skuId = `${itemInput.value.trim()}@${locInput.value.trim()}`;
-        if (itemInput.value.trim() && locInput.value.trim()) fetchAndDisplaySkuDetails(skuId);
-        else alert('Please enter both an Item and a Location.');
-    });
-    getNetworkBtn.addEventListener('click', () => {
-        if (currentSkuId) {
-            skuPropertiesDisplay.classList.add('hidden');
-            const oldGraph = document.getElementById('bom-viewer-graph');
-            if (oldGraph) oldGraph.remove();
-            
-            const graphContainer = document.createElement('div');
-            graphContainer.id = 'bom-viewer-graph';
-            graphContainer.classList.add('w-full', 'mt-4'); 
-            bomViewerWrapper.appendChild(graphContainer);
-            
-            lastTableRenderFunction = null; 
-            if (isDemandSku) fetchNetworkWithShortestPath(currentSkuId, 'Full Network with Shortest Path', graphContainer);
-            else fetchNetworkGraph(currentSkuId, 'Full Network', graphContainer);
-        }
-    });
     function fetchAndDisplaySkuDetails(skuId) {
         fetch('http://127.0.0.1:5000/api/sku-details', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku_id: skuId }) })
         .then(response => response.json())
         .then(details => {
             const oldGraph = document.getElementById('bom-viewer-graph');
             if (oldGraph) oldGraph.remove();
-
             skuPropertiesDisplay.innerHTML = '';
             currentSkuId = null;
             isDemandSku = false;
-
             getNetworkBtn.disabled = true;
             getNetworkBtn.className = 'px-4 py-1 bg-gray-300 text-gray-800 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 flex-shrink-0 whitespace-nowrap';
-
             if (details.found) {
                 currentSkuId = skuId;
                 isDemandSku = details.properties.demand_sku === true;
@@ -859,11 +847,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Graph Rendering Logic ---
     function renderNetworkGraph(id, networkData, graphType, targetContainer, shortestPathData = null) {
         targetContainer.innerHTML = '';
         targetContainer.appendChild(createHeaderWithBackButton(graphType, lastTableRenderFunction));
-        
         if (!networkData || networkData.length === 0) {
             targetContainer.innerHTML += '<p class="text-gray-500">No network data found.</p>';
             return;
@@ -871,12 +857,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const container = document.createElement('div');
         container.id = 'network-container';
         targetContainer.appendChild(container);
-        
         const nodes = new vis.DataSet();
         const edges = new vis.DataSet();
         const uniqueNodeIds = new Set();
         const shortestPathEdgeIds = new Set(shortestPathData ? shortestPathData.flatMap(p => p.relationships).map(r => r.id) : []);
-
         networkData.forEach(path => {
             path.nodes.forEach(node => {
                 if (!uniqueNodeIds.has(node.id)) {
@@ -890,11 +874,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         shape: 'image',
                         image: icon.image,
                         size: icon.size,
-                        font: {
-                            size: 12,
-                            color: '#4b5563',
-                            vadjust: icon.vadjust
-                        }
+                        font: { size: 12, color: '#4b5563', vadjust: icon.vadjust }
                     });
                 }
             });
@@ -906,7 +886,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 edges.add(edgeOptions);
             });
         });
-        
         const network = new vis.Network(container, { nodes, edges }, {
             nodes: { 
                 font: { size: 12, color: '#4b5563' },
@@ -921,7 +900,6 @@ document.addEventListener('DOMContentLoaded', () => {
         network.on('click', (params) => handleGraphClick(params, nodes, edges));
     }
     
-    // API Call wrappers
     function fetchNetworkGraph(skuId, graphType, container) { fetch('http://127.0.0.1:5000/api/network-graph', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku_id: skuId }) }).then(r => r.json()).then(d => renderNetworkGraph(skuId, d, graphType, container, null)); }
     function fetchNetworkWithShortestPath(skuId, graphType, container) { fetch('http://127.0.0.1:5000/api/network-with-shortest-path', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku_id: skuId }) }).then(r => r.json()).then(d => renderNetworkGraph(skuId, d.full_network, graphType, container, d.shortest_path)); }
     function fetchResourceNetworkGraph(resId, graphType, container) { fetch('http://127.0.0.1:5000/api/resource-network', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ res_id: resId }) }).then(r => r.json()).then(d => renderNetworkGraph(resId, d, graphType, container)); }
