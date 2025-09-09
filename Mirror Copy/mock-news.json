@@ -1,0 +1,32 @@
+{
+    "articles": [
+        {
+            "title": "[MOCK] US Announces 5% Tariff Reduction on Imported Silicon Wafers",
+            "description": "The administration announced a plan to reduce tariffs on key electronic components, including silicon wafers, from several Asian countries. This is expected to lower costs for domestic chip manufacturers.",
+            "url": "#",
+            "source": { "name": "System Fallback Data" },
+            "imageUrl": "images/default-news.png"
+        },
+        {
+            "title": "[MOCK] Intel Announces Major Fab Plant Expansion in Ohio to Boost Capacity",
+            "description": "In a move to onshore production and increase supply chain resilience, Intel has broken ground on a new state-of-the-art fabrication plant in Ohio, promising to boost global chip capacity.",
+            "url": "#",
+            "source": { "name": "System Fallback Data" },
+            "imageUrl": "images/default-news.png"
+        },
+        {
+            "title": "[MOCK] Report: Global PC Sales Weaker Than Expected, Suggesting Demand Slump",
+            "description": "Analysts report that global sales of personal computers have fallen for the third consecutive quarter, raising concerns about weakening consumer demand for electronics.",
+            "url": "#",
+      "source": { "name": "System Fallback Data" },
+            "imageUrl": "images/default-news.png"
+        },
+        {
+            "title": "[MOCK] Port Congestion in Southeast Asia Worsens, Threatening Chip Shipments",
+            "description": "A combination of labor shortages and high volume is causing significant delays at major ports in Southeast Asia, creating a new bottleneck for the global semiconductor supply chain.",
+            "url": "#",
+            "source": { "name": "System Fallback Data" },
+            "imageUrl": "images/default-news.png"
+        }
+    ]
+}
