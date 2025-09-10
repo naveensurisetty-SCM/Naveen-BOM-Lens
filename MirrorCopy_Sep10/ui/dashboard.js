@@ -1,133 +1,17 @@
+// ui/dashboard.js
 import { planConfig } from '../config.js';
 import { renderNetworkGraph, fetchResourceNetworkGraph } from './bomViewer.js';
 
 let lastTableRenderFunction = null;
 
-// This helper function creates the popup for managing columns
-function createColumnManagerPopup(table, settingsButton) {
-    // Close any existing popups first
-    document.querySelectorAll('.column-manager-popup').forEach(p => p.remove());
-
-    const popup = document.createElement('div');
-    popup.className = 'column-manager-popup';
-    
-    // Temporarily append to measure its width, then position it
-    popup.style.visibility = 'hidden';
-    document.body.appendChild(popup);
-    const popupWidth = popup.offsetWidth;
-    
-    const btnRect = settingsButton.getBoundingClientRect();
-    let leftPos = btnRect.right + window.scrollX - popupWidth;
-    if (leftPos < 10) { // Check if it's going off the left edge
-        leftPos = 10;
-    }
-    popup.style.top = `${btnRect.bottom + window.scrollY + 5}px`;
-    popup.style.left = `${leftPos}px`;
-    popup.style.visibility = 'visible';
-
-    popup.innerHTML = `<h4>Configure Columns</h4>`;
-    const list = document.createElement('ul');
-
-    let draggedItem = null;
-
-    table.getColumns().forEach(column => {
-        const item = document.createElement('li');
-        item.draggable = true;
-        item.dataset.field = column.getField();
-
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.checked = column.isVisible();
-        checkbox.onchange = () => {
-            if (checkbox.checked) {
-                column.show();
-            } else {
-                column.hide();
-            }
-        };
-
-        const label = document.createElement('span');
-        label.textContent = column.getDefinition().title;
-        
-        item.appendChild(checkbox);
-        item.appendChild(label);
-        list.appendChild(item);
-
-        // Drag and Drop events for reordering
-        item.addEventListener('dragstart', () => {
-            draggedItem = item;
-            setTimeout(() => item.classList.add('dragging'), 0);
-        });
-        item.addEventListener('dragend', () => {
-            setTimeout(() => {
-                draggedItem.classList.remove('dragging');
-                draggedItem = null;
-            }, 0);
-        });
-        item.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            const afterElement = [...list.querySelectorAll('li:not(.dragging)')].reduce((closest, child) => {
-                const box = child.getBoundingClientRect();
-                const offset = e.clientY - box.top - box.height / 2;
-                return (offset < 0 && offset > closest.offset) ? { offset: offset, element: child } : closest;
-            }, { offset: Number.NEGATIVE_INFINITY }).element;
-            
-            if (afterElement == null) {
-                list.appendChild(draggedItem);
-            } else {
-                list.insertBefore(draggedItem, afterElement);
-            }
-            
-            const originalColumnDefs = table.getColumnDefinitions();
-            const columnDefMap = originalColumnDefs.reduce((map, col) => {
-                map[col.field] = col;
-                return map;
-            }, {});
-            
-            const newOrderOfFields = [...list.querySelectorAll('li')].map(li => li.dataset.field);
-            const newColumnDefs = newOrderOfFields.map(field => columnDefMap[field]);
-
-            table.setColumns(newColumnDefs);
-        });
-    });
-
-    popup.appendChild(list);
-
-    // Close popup if clicking outside
-    setTimeout(() => {
-        document.addEventListener('click', function closeHandler(e) {
-            if (!popup.contains(e.target) && e.target !== settingsButton) {
-                popup.remove();
-                document.removeEventListener('click', closeHandler);
-            }
-        });
-    }, 0);
-}
-
-
-function createHeaderWithBackButton(title, backFunction, tableInstance = null) {
+function createHeaderWithBackButton(title, backFunction) {
     const header = document.createElement('div');
     header.className = 'flex justify-between items-center mb-4';
     
     const titleEl = document.createElement('h2');
     titleEl.className = 'text-xl font-bold text-gray-800';
     titleEl.textContent = title;
-    
-    const buttonGroup = document.createElement('div');
-    buttonGroup.className = 'flex items-center space-x-2';
-
-    // Add settings button if a table instance is provided
-    if (tableInstance) {
-        const settingsButton = document.createElement('button');
-        settingsButton.className = 'flex items-center p-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors';
-        settingsButton.title = 'Configure Columns';
-        settingsButton.innerHTML = `<i class="fas fa-cog"></i>`;
-        settingsButton.onclick = (e) => {
-            e.stopPropagation();
-            createColumnManagerPopup(tableInstance, settingsButton);
-        };
-        buttonGroup.appendChild(settingsButton);
-    }
+    header.appendChild(titleEl);
 
     if (backFunction) {
         const backButton = document.createElement('button');
@@ -135,11 +19,8 @@ function createHeaderWithBackButton(title, backFunction, tableInstance = null) {
         backButton.title = 'Back';
         backButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" /></svg>`;
         backButton.addEventListener('click', backFunction);
-        buttonGroup.appendChild(backButton);
+        header.appendChild(backButton);
     }
-    
-    header.appendChild(titleEl);
-    header.appendChild(buttonGroup);
     return header;
 }
 
@@ -148,72 +29,39 @@ function createResourceTable(title, data, messageIfEmpty, backFunction, showDash
     const renderFunc = () => {
         lastTableRenderFunction = renderFunc;
         resultsContainer.innerHTML = ''; 
-        
+        resultsContainer.appendChild(createHeaderWithBackButton(title, backFunction));
         if (!data || data.length === 0) {
-            resultsContainer.appendChild(createHeaderWithBackButton(title, backFunction));
             resultsContainer.innerHTML += `<p class="text-gray-500">${messageIfEmpty}</p>`;
             return;
         }
-
-        const tableContainer = document.createElement('div');
-        tableContainer.className = 'tabulator-creative';
-        
-        const tableData = data.map(node => node.properties);
         const allKeys = new Set(data.flatMap(node => Object.keys(node.properties)));
         const sortedKeys = ['res_id', ...Array.from(allKeys).filter(key => key !== 'res_id').sort()];
-
-        const columns = sortedKeys.map(key => {
-            const columnDef = {
-                title: key.replace(/_/g, ' '),
-                field: key,
-                headerHozAlign: "center",
-                hozAlign: "center",
-                resizable: true,
-                headerSort: true,
-            };
-
-            if (key === 'res_id') {
-                columnDef.formatter = function(cell) {
-                    const resId = cell.getValue();
-                    const container = document.createElement("div");
-                    container.classList.add("flex", "items-center", "justify-center", "space-x-2");
-                    container.innerHTML = `<span>${resId}</span>`;
-                    
-                    const button = document.createElement("button");
-                    button.classList.add("resource-network-btn", "px-2", "py-1", "bg-cyan-500", "text-white", "rounded-lg", "text-xs", "hover:bg-cyan-600");
-                    button.dataset.resId = resId;
-                    button.textContent = "Show Network";
-                    button.onclick = (e) => {
-                        e.stopPropagation();
-                        const networkTitle = `Network for Resource ${resId}`;
-                        resultsContainer.innerHTML = '';
-                        resultsContainer.appendChild(createHeaderWithBackButton(networkTitle, renderFunc));
-                        fetchResourceNetworkGraph(resId, networkTitle, resultsContainer);
-                        showDashboardContent(resultsContainer);
-                    };
-                    container.appendChild(button);
-                    return container;
-                };
-            }
-            return columnDef;
+        const table = document.createElement('table');
+        table.className = 'min-w-full divide-y divide-gray-200';
+        table.innerHTML = `<thead><tr>${sortedKeys.map(key => `<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">${key.replace(/_/g, ' ')}</th>`).join('')}</tr></thead>`;
+        const tableBody = document.createElement('tbody');
+        tableBody.className = 'bg-white divide-y divide-gray-200';
+        data.forEach(node => {
+            const row = document.createElement('tr');
+            row.innerHTML = sortedKeys.map(key => {
+                const value = node.properties[key];
+                if (key === 'res_id') {
+                    return `<td class="px-6 py-4 whitespace-nowrap text-gray-500"><div class="flex items-center space-x-2"><span>${value || 'N/A'}</span><button class="resource-network-btn px-2 py-1 bg-cyan-500 text-white rounded-lg text-xs hover:bg-cyan-600" data-res-id="${value}">Show Network</button></div></td>`;
+                }
+                return `<td class="px-6 py-4 whitespace-nowrap text-gray-500">${typeof value === 'object' ? JSON.stringify(value) : value}</td>`;
+            }).join('');
+            tableBody.appendChild(row);
         });
+        table.appendChild(tableBody);
+        resultsContainer.appendChild(table);
 
-        resultsContainer.appendChild(tableContainer);
-        const table = new Tabulator(tableContainer, { // Create table instance
-            data: tableData,
-            columns: columns,
-            layout: "fitDataStretch",
-            movableColumns: true,
-            classes: "tabulator-creative",
-            persistence: {
-                sort: true,
-                columns: true,
-            },
-            persistenceID: `dashboard-table-${title.replace(/\s+/g, '-')}`,
+        resultsContainer.querySelectorAll('.resource-network-btn').forEach(button => {
+            button.addEventListener('click', (event) => {
+                const resId = event.target.getAttribute('data-res-id');
+                fetchResourceNetworkGraph(resId, `Network for Resource ${resId}`, resultsContainer);
+                showDashboardContent(resultsContainer);
+            });
         });
-        
-        // Add header after table is initialized to pass the instance
-        resultsContainer.prepend(createHeaderWithBackButton(title, backFunction, table));
     };
     renderFunc();
 }
@@ -223,17 +71,11 @@ function createSkuTable(title, data, messageIfEmpty, backFunction, showDashboard
     const renderFunc = () => {
         lastTableRenderFunction = renderFunc;
         resultsContainer.innerHTML = '';
-
+        resultsContainer.appendChild(createHeaderWithBackButton(title, backFunction));
         if (!data || data.length === 0) {
-            resultsContainer.appendChild(createHeaderWithBackButton(title, backFunction));
             resultsContainer.innerHTML += `<p class="text-gray-500">${messageIfEmpty}</p>`;
             return;
         }
-
-        const tableContainer = document.createElement('div');
-        tableContainer.className = 'tabulator-creative';
-
-        const tableData = data.map(node => node.properties);
         const allKeys = new Set(data.flatMap(node => Object.keys(node.properties)));
         const keysToDisplay = Array.from(allKeys).filter(key => key !== 'shortest_lead_time');
         const sortedKeys = keysToDisplay.sort((a, b) => {
@@ -246,156 +88,111 @@ function createSkuTable(title, data, messageIfEmpty, backFunction, showDashboard
             return a.localeCompare(b);
         });
 
-        const columns = sortedKeys.map(key => {
-            const columnDef = {
-                title: key.replace(/_/g, ' '),
-                field: key,
-                headerHozAlign: "center",
-                hozAlign: "center",
-                resizable: true,
-                headerSort: true,
-            };
-
-            const buttonFormatter = (cell, text, style, action) => {
-                const value = cell.getValue();
-                if (!value || value <= 0) return `<span>${value || 0}</span>`;
-
-                const skuId = cell.getRow().getData().sku_id;
-                const container = document.createElement("div");
-                container.classList.add("flex", "items-center", "justify-center", "space-x-2");
-                container.innerHTML = `<span>${value}</span>`;
-                
-                const button = document.createElement("button");
-                button.className = `px-2 py-1 text-white rounded-lg text-xs ${style}`;
-                button.dataset.skuId = skuId;
-                button.textContent = text;
-                button.onclick = (e) => {
-                    e.stopPropagation();
-                    action(skuId, showDashboardContent);
-                };
-                container.appendChild(button);
-                return container;
-            };
-
-            if (key === 'sku_id') {
-                columnDef.formatter = function(cell) {
-                    const skuId = cell.getValue();
-                    const container = document.createElement("div");
-                    container.classList.add("flex", "items-center", "justify-center", "space-x-2");
-                    container.innerHTML = `<span>${skuId}</span>`;
-                    
-                    const button = document.createElement("button");
-                    button.className = "px-2 py-1 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600";
-                    button.dataset.skuId = skuId;
-                    button.textContent = "Show Network";
-                    button.onclick = (e) => {
-                        e.stopPropagation();
-                        fetch('http://127.0.0.1:5000/api/network-graph', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku_id: skuId }) })
-                            .then(r => r.json())
-                            .then(d => {
-                                const networkTitle = `Network for ${skuId}`;
-                                resultsContainer.innerHTML = '';
-                                resultsContainer.appendChild(createHeaderWithBackButton(networkTitle, renderFunc));
-                                renderNetworkGraph(skuId, d, networkTitle, resultsContainer, null);
-                            });
-                        showDashboardContent(resultsContainer);
-                    };
-                    container.appendChild(button);
-                    return container;
-                };
-            } 
-            else if (key === 'cust_demand_qty') {
-                columnDef.formatter = cell => buttonFormatter(cell, "Show CO", "bg-red-500 hover:bg-red-600", renderAffectedCustOrdersForSku);
-            } else if (key === 'fcst_demand_qty') {
-                columnDef.formatter = cell => buttonFormatter(cell, "Show FO", "bg-orange-500 hover:bg-orange-600", renderAffectedFcstOrdersForSku);
-            }
-            return columnDef;
-        });
-
-        resultsContainer.appendChild(tableContainer);
-        const table = new Tabulator(tableContainer, {
-            data: tableData,
-            columns: columns,
-            layout: "fitDataStretch",
-            movableColumns: true,
-            classes: "tabulator-creative",
-            persistence: {
-                sort: true,
-                columns: true,
-            },
-            persistenceID: `dashboard-table-${title.replace(/\s+/g, '-')}`,
-        });
+        const table = document.createElement('table');
+        table.className = 'min-w-full divide-y divide-gray-200';
+        table.innerHTML = `<thead><tr>${sortedKeys.map(key => `<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">${key.replace(/_/g, ' ')}</th>`).join('')}</tr></thead>`;
         
-        resultsContainer.prepend(createHeaderWithBackButton(title, backFunction, table));
+        const tableBody = document.createElement('tbody');
+        tableBody.className = 'bg-white divide-y divide-gray-200';
+        data.forEach(node => {
+            const row = document.createElement('tr');
+            const skuId = node.properties.sku_id;
+            row.innerHTML = sortedKeys.map(key => {
+                const value = node.properties[key];
+                let cellHtml = `<td class="px-6 py-4 whitespace-nowrap text-gray-500">${typeof value === 'object' ? JSON.stringify(value) : (value || '')}</td>`;
+
+                if (key === 'sku_id') {
+                    cellHtml = `<td class="px-6 py-4 whitespace-nowrap text-gray-500"><div class="flex items-center space-x-2"><span>${value || 'N/A'}</span><button class="network-btn px-2 py-1 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600" data-sku-id="${value}">Show Network</button></div></td>`;
+                } else if (key === 'cust_demand_qty' && value > 0) {
+                    cellHtml = `<td class="px-6 py-4 whitespace-nowrap text-gray-500"><div class="flex items-center space-x-2"><span>${value}</span><button class="show-co-btn px-2 py-1 bg-red-500 text-white rounded-lg text-xs hover:bg-red-600" data-sku-id="${skuId}">Show CO</button></div></td>`;
+                } else if (key === 'fcst_demand_qty' && value > 0) {
+                    cellHtml = `<td class="px-6 py-4 whitespace-nowrap text-gray-500"><div class="flex items-center space-x-2"><span>${value}</span><button class="show-fo-btn px-2 py-1 bg-orange-500 text-white rounded-lg text-xs hover:bg-orange-600" data-sku-id="${skuId}">Show FO</button></div></td>`;
+                }
+                return cellHtml;
+            }).join('');
+            tableBody.appendChild(row);
+        });
+
+        table.appendChild(tableBody);
+        resultsContainer.appendChild(table);
+        
+        resultsContainer.querySelectorAll('.network-btn').forEach(button => {
+            button.addEventListener('click', (event) => {
+                const skuId = event.target.getAttribute('data-sku-id');
+                fetch('http://127.0.0.1:5000/api/network-graph', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku_id: skuId }) })
+                    .then(r => r.json())
+                    .then(d => renderNetworkGraph(skuId, d, `Network for ${skuId}`, resultsContainer, null));
+                showDashboardContent(resultsContainer);
+            });
+        });
+        resultsContainer.querySelectorAll('.show-co-btn').forEach(button => {
+            button.addEventListener('click', (event) => {
+                const skuId = event.target.getAttribute('data-sku-id');
+                renderAffectedCustOrdersForSku(skuId, showDashboardContent);
+            });
+        });
+        resultsContainer.querySelectorAll('.show-fo-btn').forEach(button => {
+            button.addEventListener('click', (event) => {
+                const skuId = event.target.getAttribute('data-sku-id');
+                renderAffectedFcstOrdersForSku(skuId, showDashboardContent);
+            });
+        });
     };
     renderFunc();
 }
 
-// ## MODIFICATION START ##
 function createOrderTable(title, data, messageIfEmpty, backFunction) {
     const resultsContainer = document.getElementById('results-container');
     const renderFunc = () => {
         lastTableRenderFunction = renderFunc;
         resultsContainer.innerHTML = '';
-        
+        resultsContainer.appendChild(createHeaderWithBackButton(title, backFunction));
         if (!data || data.length === 0) {
-            resultsContainer.appendChild(createHeaderWithBackButton(title, backFunction));
             resultsContainer.innerHTML += `<p class="text-gray-500">${messageIfEmpty}</p>`;
             return;
         }
         
-        const tableContainer = document.createElement('div');
-        tableContainer.className = 'tabulator-creative';
+        const desiredOrder = ['item', 'loc', 'rgid', 'cgid', 'qty'];
+        const originalKeys = Object.keys(data[0].properties.full_record);
+        
+        originalKeys.sort((a, b) => {
+            const aLower = a.toLowerCase();
+            const bLower = b.toLowerCase();
+            const aIndex = desiredOrder.indexOf(aLower);
+            const bIndex = desiredOrder.indexOf(bLower);
 
-        const tableData = data.map(record => record.properties.full_record);
-        
-        // Define the preferred column orders
-        const customerOrderSequence = ['OrderID', 'Item', 'Loc', 'RGID', 'CGID', 'Delivery Date', 'Ship date WW', 'Ship Date'];
-        const forecastOrderSequence = ['Seqnum', 'Item', 'ItemClass', 'U CAPACITY CORRIDOR', 'Loc', 'Dmd Group', 'Cust Tier', 'Priority', 'Intel WW', 'Qty', 'Descr'];
-
-        let preferredOrder = [];
-        if (title.toLowerCase().includes('customer')) {
-            preferredOrder = customerOrderSequence;
-        } else if (title.toLowerCase().includes('forecast')) {
-            preferredOrder = forecastOrderSequence;
-        }
-
-        const allKeys = Object.keys(tableData[0]);
-        const preferredKeysInOrder = preferredOrder.filter(key => allKeys.includes(key));
-        const remainingKeys = allKeys
-            .filter(key => !preferredOrder.includes(key))
-            .sort((a, b) => a.localeCompare(b));
-        
-        const finalKeyOrder = [...preferredKeysInOrder, ...remainingKeys];
-        
-        const columns = finalKeyOrder.map(key => ({
-            title: key.replace(/_/g, ' '),
-            field: key,
-            headerHozAlign: "center",
-            hozAlign: "center",
-            resizable: true,
-            headerSort: true,
-        }));
-        
-        resultsContainer.appendChild(tableContainer);
-        const table = new Tabulator(tableContainer, {
-            data: tableData,
-            columns: columns,
-            layout: "fitDataStretch",
-            movableColumns: true,
-            classes: "tabulator-creative",
-            persistence: {
-                sort: true,
-                columns: true,
-            },
-            persistenceID: `dashboard-table-${title.replace(/\s+/g, '-')}`,
+            if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+            if (aIndex !== -1) return -1;
+            if (bIndex !== -1) return 1;
+            return aLower.localeCompare(bLower);
         });
+        const sortedKeys = originalKeys;
         
-        resultsContainer.prepend(createHeaderWithBackButton(title, backFunction, table));
+        const tableWrapper = document.createElement('div');
+        tableWrapper.className = 'overflow-x-auto'; 
+
+        const table = document.createElement('table');
+        table.className = 'min-w-full divide-y divide-gray-200';
+        table.innerHTML = `<thead><tr>${sortedKeys.map(key => `<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">${key.replace(/_/g, ' ')}</th>`).join('')}</tr></thead>`;
+        
+        const tableBody = document.createElement('tbody');
+        tableBody.className = 'bg-white divide-y divide-gray-200';
+        data.forEach(record => {
+            const rowData = record.properties.full_record;
+            const row = document.createElement('tr');
+            row.innerHTML = sortedKeys.map(key => {
+                const value = rowData[key];
+                return `<td class="px-6 py-4 whitespace-nowrap text-gray-500">${value !== null ? value : ''}</td>`;
+            }).join('');
+            tableBody.appendChild(row);
+        });
+        table.appendChild(tableBody);
+        
+        tableWrapper.appendChild(table);
+        resultsContainer.appendChild(tableWrapper);
     };
     renderFunc();
 }
-// ## MODIFICATION END ##
 
 const renderAffectedCustOrdersForSku = (skuId, showDashboardContent) => {
     fetch('http://127.0.0.1:5000/api/affected-cust-orders-by-sku', {

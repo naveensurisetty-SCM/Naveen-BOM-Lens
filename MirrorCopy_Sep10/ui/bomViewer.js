@@ -1,110 +1,9 @@
+// ui/bomViewer.js
 import { createNodeIcon } from '../shape-library.js';
 
 let currentSkuId = null;
 let isDemandSku = false;
 
-// This helper function creates the popup for managing columns
-function createColumnManagerPopup(table, settingsButton) {
-    // Close any existing popups first
-    document.querySelectorAll('.column-manager-popup').forEach(p => p.remove());
-
-    const popup = document.createElement('div');
-    popup.className = 'column-manager-popup';
-    
-    // Temporarily append to measure its width, then position it
-    popup.style.visibility = 'hidden';
-    document.body.appendChild(popup);
-    const popupWidth = popup.offsetWidth;
-    
-    const btnRect = settingsButton.getBoundingClientRect();
-    let leftPos = btnRect.right + window.scrollX - popupWidth;
-    if (leftPos < 10) { // Check if it's going off the left edge
-        leftPos = 10;
-    }
-    popup.style.top = `${btnRect.bottom + window.scrollY + 5}px`;
-    popup.style.left = `${leftPos}px`;
-    popup.style.visibility = 'visible';
-
-    popup.innerHTML = `<h4>Configure Columns</h4>`;
-    const list = document.createElement('ul');
-
-    let draggedItem = null;
-
-    table.getColumns().forEach(column => {
-        const item = document.createElement('li');
-        item.draggable = true;
-        item.dataset.field = column.getField();
-
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.checked = column.isVisible();
-        checkbox.onchange = () => {
-            if (checkbox.checked) {
-                column.show();
-            } else {
-                column.hide();
-            }
-        };
-
-        const label = document.createElement('span');
-        label.textContent = column.getDefinition().title;
-        
-        item.appendChild(checkbox);
-        item.appendChild(label);
-        list.appendChild(item);
-
-        // Drag and Drop events for reordering
-        item.addEventListener('dragstart', () => {
-            draggedItem = item;
-            setTimeout(() => item.classList.add('dragging'), 0);
-        });
-        item.addEventListener('dragend', () => {
-            setTimeout(() => {
-                draggedItem.classList.remove('dragging');
-                draggedItem = null;
-            }, 0);
-        });
-        item.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            const afterElement = [...list.querySelectorAll('li:not(.dragging)')].reduce((closest, child) => {
-                const box = child.getBoundingClientRect();
-                const offset = e.clientY - box.top - box.height / 2;
-                return (offset < 0 && offset > closest.offset) ? { offset: offset, element: child } : closest;
-            }, { offset: Number.NEGATIVE_INFINITY }).element;
-            
-            if (afterElement == null) {
-                list.appendChild(draggedItem);
-            } else {
-                list.insertBefore(draggedItem, afterElement);
-            }
-            
-            const originalColumnDefs = table.getColumnDefinitions();
-            const columnDefMap = originalColumnDefs.reduce((map, col) => {
-                map[col.field] = col;
-                return map;
-            }, {});
-            
-            const newOrderOfFields = [...list.querySelectorAll('li')].map(li => li.dataset.field);
-            const newColumnDefs = newOrderOfFields.map(field => columnDefMap[field]);
-
-            table.setColumns(newColumnDefs);
-        });
-    });
-
-    popup.appendChild(list);
-
-    // Close popup if clicking outside
-    setTimeout(() => {
-        document.addEventListener('click', function closeHandler(e) {
-            if (!popup.contains(e.target) && e.target !== settingsButton) {
-                popup.remove();
-                document.removeEventListener('click', closeHandler);
-            }
-        });
-    }, 0);
-}
-
-// Reverted modal to simple HTML table for clarity and performance in the small popup
 function handleGraphClick(params, nodes, edges) {
     const nodePropertiesModal = document.getElementById('node-properties-modal');
     const nodePropertiesTitle = document.getElementById('node-properties-title');
@@ -122,7 +21,7 @@ function handleGraphClick(params, nodes, edges) {
     if (clickedItem) {
         const properties = JSON.parse(clickedItem.title);
         nodePropertiesTitle.textContent = `Properties for ${itemType}`;
-        nodePropertiesContent.innerHTML = ''; // Clear previous
+        nodePropertiesContent.innerHTML = '';
         const table = document.createElement('table');
         const tableBody = document.createElement('tbody');
         tableBody.innerHTML = Object.entries(properties).map(([key, value]) => `<tr><td class="font-semibold text-gray-600 pr-4 align-top">${key.replace(/_/g, ' ')}</td><td class="text-gray-800 break-all">${value}</td></tr>`).join('');
@@ -206,96 +105,32 @@ export function fetchResourceNetworkGraph(resId, graphType, container) {
     .then(d => renderNetworkGraph(resId, d, graphType, container)); 
 }
 
-// ## MODIFICATION START ##
-// Rewritten to use the user's preferred default column sequence.
 function displaySkuProperties(properties) {
     const skuPropertiesDisplay = document.getElementById('sku-properties-display');
-    skuPropertiesDisplay.innerHTML = ''; // Clear previous content
-
-    const header = document.createElement('div');
-    header.className = 'flex justify-between items-center mb-4';
-    const titleEl = document.createElement('h3');
-    titleEl.className = 'text-lg font-semibold';
-    titleEl.textContent = "SKU Properties";
-    const settingsButton = document.createElement('button');
-    settingsButton.className = 'flex items-center p-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors';
-    settingsButton.title = 'Configure Columns';
-    settingsButton.innerHTML = `<i class="fas fa-cog"></i>`;
-    header.appendChild(titleEl);
-    header.appendChild(settingsButton);
-    skuPropertiesDisplay.appendChild(header);
-
-    const tableContainer = document.createElement('div');
-    tableContainer.className = 'tabulator-creative';
-    skuPropertiesDisplay.appendChild(tableContainer);
-
-    // Define the preferred column order
-    const preferredOrder = ['item', 'loc', 'demand_sku', 'bottleneck', 'broken_bom', 'cust_demand_qty', 'fcst_demand_qty', 'total_demand_qty', 'infinite_supply', 'shortest_lead_time', 'overloaded_res_count'];
-    
-    const allKeys = Object.keys(properties);
-    const preferredKeysInOrder = preferredOrder.filter(key => allKeys.includes(key));
-    const remainingKeys = allKeys
-        .filter(key => !preferredOrder.includes(key))
-        .sort((a, b) => a.localeCompare(b));
-    
-    const finalKeyOrder = [...preferredKeysInOrder, ...remainingKeys];
-
-    const columns = finalKeyOrder.map(key => ({
-        title: key.replace(/_/g, ' '),
-        field: key,
-        headerHozAlign: "center",
-        hozAlign: "center",
-        resizable: true,
-        headerSort: false, 
-    }));
-
-    const table = new Tabulator(tableContainer, {
-        data: [properties],
-        columns: columns,
-        layout: "fitDataStretch",
-        classes: "tabulator-creative",
-    });
-
-    settingsButton.onclick = (e) => {
-        e.stopPropagation();
-        createColumnManagerPopup(table, settingsButton);
-    };
-
+    skuPropertiesDisplay.innerHTML = '';
+    const table = document.createElement('table');
+    table.className = 'min-w-full divide-y divide-gray-200 text-sm';
+    table.innerHTML = `<thead class="bg-gray-50"><tr>${Object.keys(properties).map(key => `<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">${key.replace(/_/g, ' ')}</th>`).join('')}</tr></thead>`;
+    const tableBody = document.createElement('tbody');
+    tableBody.className = 'bg-white divide-y divide-gray-200';
+    const row = document.createElement('tr');
+    row.innerHTML = Object.values(properties).map(value => `<td class="px-4 py-2 whitespace-nowrap text-gray-800">${value}</td>`).join('');
+    tableBody.appendChild(row);
+    table.appendChild(tableBody);
+    skuPropertiesDisplay.appendChild(table);
     skuPropertiesDisplay.classList.remove('hidden');
 }
-
-// New helper function to create a header with a back button for the network view
-function createBomViewerHeader(title, backFunction) {
-    const header = document.createElement('div');
-    header.className = 'flex justify-between items-center mb-4';
-    
-    const titleEl = document.createElement('h2');
-    titleEl.className = 'text-xl font-bold text-gray-800';
-    titleEl.textContent = title;
-    
-    const backButton = document.createElement('button');
-    backButton.className = 'flex items-center p-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors';
-    backButton.title = 'Back to SKU Properties';
-    backButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" /></svg>`;
-    backButton.addEventListener('click', backFunction);
-    
-    header.appendChild(titleEl);
-    header.appendChild(backButton);
-    return header;
-}
-// ## MODIFICATION END ##
 
 function fetchAndDisplaySkuDetails(skuId) {
     const skuPropertiesDisplay = document.getElementById('sku-properties-display');
     const getNetworkBtn = document.getElementById('get-network-btn');
     
-    // Clear any existing graph when fetching new details
-    const oldGraphContainer = document.getElementById('bom-viewer-graph-container');
-    if (oldGraphContainer) oldGraphContainer.remove();
-    
     fetch('http://127.0.0.1:5000/api/sku-details', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku_id: skuId }) })
     .then(response => response.json())
     .then(details => {
+        const oldGraph = document.getElementById('bom-viewer-graph');
+        if (oldGraph) oldGraph.remove();
+
         skuPropertiesDisplay.innerHTML = '';
         currentSkuId = null;
         isDemandSku = false;
@@ -338,23 +173,18 @@ export function initBomViewer() {
     getNetworkBtn.addEventListener('click', () => {
         if (currentSkuId) {
             document.getElementById('sku-properties-display').classList.add('hidden');
-            const oldGraphContainer = document.getElementById('bom-viewer-graph-container');
-            if (oldGraphContainer) oldGraphContainer.remove();
+            const oldGraph = document.getElementById('bom-viewer-graph');
+            if (oldGraph) oldGraph.remove();
             
             const graphContainer = document.createElement('div');
-            graphContainer.id = 'bom-viewer-graph-container';
-            graphContainer.classList.add('w-full', 'mt-4');
-            
-            const networkTitle = `Network for ${currentSkuId}`;
-            const backFunction = () => fetchAndDisplaySkuDetails(currentSkuId);
-            
-            graphContainer.appendChild(createBomViewerHeader(networkTitle, backFunction));
+            graphContainer.id = 'bom-viewer-graph';
+            graphContainer.classList.add('w-full', 'mt-4'); 
             bomViewerWrapper.appendChild(graphContainer);
             
             if (isDemandSku) {
-                fetchNetworkWithShortestPath(currentSkuId, networkTitle, graphContainer);
+                fetchNetworkWithShortestPath(currentSkuId, 'Full Network with Shortest Path', graphContainer);
             } else {
-                fetchNetworkGraph(currentSkuId, networkTitle, graphContainer);
+                fetchNetworkGraph(currentSkuId, 'Full Network', graphContainer);
             }
         }
     });
