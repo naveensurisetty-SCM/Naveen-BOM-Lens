@@ -136,19 +136,20 @@
             </div>
             
             <div id="main-cards-container">
-                <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+                <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
                     <div class="bg-white rounded-xl shadow-lg p-4 hover:shadow-2xl transition-shadow duration-300"><h3 class="text-sm font-medium text-gray-500 uppercase">Total Demand at Risk</h3><p id="total-demand-at-risk" class="mt-1 text-2xl font-bold text-red-600">$0</p></div>
                     <div id="affected-orders-card" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
                         <h3 class="text-sm font-medium text-gray-500 uppercase">Affected Orders</h3>
                         <p id="affected-orders" class="mt-1 text-2xl font-bold text-red-600">0</p>
                     </div>
                     <div id="broken-networks-card" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300"><h3 class="text-sm font-medium text-gray-500 uppercase">Broken Networks</h3><p id="broken-networks" class="mt-1 text-2xl font-bold text-orange-500">0</p></div>
+                    <div id="bottlenecks-card" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300"><h3 class="text-sm font-medium text-gray-500 uppercase">Bottlenecks</h3><p id="bottlenecks-count" class="mt-1 text-2xl font-bold text-yellow-500">0</p></div>
                 </section>
             </div>
 
             <div id="dashboard-content-area">
                 <section id="news-matrix-section" class="bg-white rounded-xl shadow-lg overflow-x-auto">
-                </section>
+                    </section>
                 
                 <div id="affected-orders-section" class="hidden">
                     <div class="max-w-2xl">
@@ -169,6 +170,7 @@
                     </div>
                 </div>
 
+                <div id="bottlenecks-subcards-section" class="hidden"><div class="max-w-2xl"><section class="grid grid-cols-1 sm:grid-cols-2 gap-6"><div id="bottleneck-resources-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300"><div class="flex items-baseline justify-between"><h4 class="text-base font-bold text-cyan-800">Resources</h4><span id="bottleneck-resources-count" class="text-lg font-bold text-cyan-800">0</span></div></div><div id="bottleneck-skus-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300"><div class="flex items-baseline justify-between"><h4 class="text-base font-bold text-indigo-800">SKU</h4><span id="bottleneck-skus-count" class="text-lg font-bold text-indigo-800">0</span></div></div></section></div></div>
                 <div id="broken-networks-section" class="hidden"><div class="max-w-2xl"><section class="grid grid-cols-1 sm:grid-cols-2 gap-6"><div id="broken-sku-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300"><div class="flex items-baseline justify-between"><h4 class="text-base font-bold text-blue-800">Broken SKU</h4><span id="broken-skus-count" class="text-lg font-bold text-blue-800">0</span></div></div><div id="broken-demand-network-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300"><div class="flex items-baseline justify-between"><h4 class="text-base font-bold text-red-800">Broken FG</h4><span id="broken-fg-networks-count" class="text-lg font-bold text-red-800">0</span></div></div></section></div></div>
                 <div id="results-container" class="hidden"></div>
             </div>
@@ -193,10 +195,9 @@
             </div>
             
             <div id="ca-cards-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 px-2">
-            </div>
-
+                </div>
             <div id="ca-results-container" class="mt-6">
-            </div>
+                </div>
         </div>
             
         <div id="node-properties-modal" class="modal hidden fixed inset-0 bg-gray-900 bg-opacity-50 items-center justify-center z-50">

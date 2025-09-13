@@ -22,22 +22,17 @@ def get_dashboard_data():
             total_affected_orders_count = cust_orders_count + fcst_orders_count
             total_affected_orders_qty = cust_orders_qty + fcst_orders_qty
             
+            res_count_result = session.run("MATCH (r:Res {bottleneck: true}) RETURN count(r) AS count").single()
+            sku_count_result = session.run("MATCH (s:SKU {bottleneck: true}) RETURN count(s) AS count").single()
+            bottleneck_res_count = res_count_result['count'] if res_count_result else 0
+            bottleneck_sku_count = sku_count_result['count'] if sku_count_result else 0
+            
             broken_total_result = session.run("MATCH (s:SKU {broken_bom: true}) RETURN count(s) AS count").single()
             broken_fg_result = session.run("MATCH (s:SKU {broken_bom: true, demand_sku: true}) RETURN count(s) AS count").single()
             broken_skus_count = broken_total_result['count'] if broken_total_result else 0
             broken_fg_count = broken_fg_result['count'] if broken_fg_result else 0
-    
-        data = { 
-            'totalDemandAtRisk': random.randint(100000, 999999), 
-            'affectedOrdersCount': total_affected_orders_count, 
-            'affectedOrdersQty': total_affected_orders_qty, 
-            'affectedCustOrdersCount': cust_orders_count, 
-            'affectedCustOrdersQty': cust_orders_qty, 
-            'affectedFcstOrdersCount': fcst_orders_count, 
-            'affectedFcstOrdersQty': fcst_orders_qty, 
-            'brokenSkusCount': broken_skus_count, 
-            'brokenFgNetworksCount': broken_fg_count
-        }
+        
+        data = { 'totalDemandAtRisk': random.randint(100000, 999999), 'affectedOrdersCount': total_affected_orders_count, 'affectedOrdersQty': total_affected_orders_qty, 'affectedCustOrdersCount': cust_orders_count, 'affectedCustOrdersQty': cust_orders_qty, 'affectedFcstOrdersCount': fcst_orders_count, 'affectedFcstOrdersQty': fcst_orders_qty, 'brokenSkusCount': broken_skus_count, 'brokenFgNetworksCount': broken_fg_count, 'bottleneckResourcesCount': bottleneck_res_count, 'bottleneckSkusCount': bottleneck_sku_count }
         return jsonify(data)
     except Exception as e:
         print(f"An error occurred in get_dashboard_data: {e}")
@@ -49,6 +44,26 @@ def get_broken_networks():
         driver = get_db()
         with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
             result = session.run("MATCH (s:SKU) WHERE s.broken_bom = true RETURN s LIMIT 10")
+            return jsonify([{'id': record['s'].element_id, 'properties': dict(record['s'])} for record in result])
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@dashboard_bp.route('/api/bottleneck-resources', methods=['GET'])
+def get_bottleneck_resources():
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            result = session.run("MATCH (r:Res) WHERE r.bottleneck = true RETURN r LIMIT 10")
+            return jsonify([{'id': record['r'].element_id, 'properties': dict(record['r'])} for record in result])
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@dashboard_bp.route('/api/bottleneck-skus', methods=['GET'])
+def get_bottleneck_skus():
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            result = session.run("MATCH (s:SKU) WHERE s.bottleneck = true RETURN s LIMIT 10")
             return jsonify([{'id': record['s'].element_id, 'properties': dict(record['s'])} for record in result])
     except Exception as e:
         return jsonify({'error': 'Internal server error'}), 500

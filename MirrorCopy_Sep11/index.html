@@ -4,20 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Supply Chain Dashboard</title>
-    <link rel="icon" type="image/svg+xml" href="images/ElevaAI_short_logo.svg">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script type="text/javascript" src="https://unpkg.com/vis-network@latest/dist/vis-network.min.js"></script>
     
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
-    
     <link href="https://unpkg.com/tabulator-tables@5.6.1/dist/css/tabulator.min.css" rel="stylesheet">
     <link href="https://unpkg.com/tabulator-tables@5.6.1/dist/css/tabulator_tailwind.min.css" rel="stylesheet">
     <script type="text/javascript" src="https://unpkg.com/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
-    
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
-
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; overflow-x: hidden; }
@@ -50,7 +44,6 @@
         @keyframes spin { to { transform: rotate(360deg); } }
 
         #main-cards-container.hidden { display: none; }
-        #ca-cards-container.hidden { display: none; }
         #news-matrix-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
         #news-matrix-table th, #news-matrix-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #e5e7eb; word-wrap: break-word; }
         #news-matrix-table th { font-size: 12px; font-weight: 600; text-transform: uppercase; color: #4b5563; background-color: #f9fafb; cursor: pointer; }
@@ -77,6 +70,8 @@
         .active-display { display: flex; align-items: center; width: 100%; height: 32px; padding: 0 8px; }
         .active-display .year-label { margin-left: 0; }
         #quarter-filter-bar.expanded .active-display { display: none; }
+
+        /* --- Option 3 Theme: Creative & Bold (for Tabulator) --- */
         .tabulator.tabulator-creative { border: none; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.07); border-radius: 12px; overflow: hidden; }
         .tabulator.tabulator-creative .tabulator-header { background-color: #4f46e5; color: #ffffff; font-weight: 600; border-bottom: none; }
         .tabulator.tabulator-creative .tabulator-col { background-color: #4f46e5; }
@@ -86,24 +81,52 @@
         .tabulator.tabulator-creative .tabulator-row.tabulator-row-hover { box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05), inset 4px 0 0 0 #4f46e5; transform: scale(1.01); position: relative; z-index: 10; }
         .tabulator.tabulator-creative .tabulator-cell { padding: 16px 20px; border-right: none; }
         .tabulator-creative .tabulator-header .tabulator-col .tabulator-col-content .tabulator-header-menu-button { display: none !important; }
-        .column-manager-popup { position: absolute; z-index: 1000; background-color: white; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); padding: 1rem; width: 280px; }
-        .column-manager-popup h4 { font-weight: 600; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid #e5e7eb; }
-        .column-manager-popup ul { list-style: none; padding: 0; margin: 0; max-height: 300px; overflow-y: auto; }
-        .column-manager-popup li { display: flex; align-items: center; padding: 8px; cursor: grab; user-select: none; background-color: #f9fafb; border: 1px solid #e5e7eb; margin-bottom: 4px; border-radius: 4px; }
-        .column-manager-popup li.dragging { opacity: 0.5; background-color: #dbeafe; }
-        .column-manager-popup li input { margin-right: 10px; }
-        .assistant-message > *:first-child { margin-top: 0; }
-        .assistant-message > *:last-child { margin-bottom: 0; }
-        .assistant-message p { margin-bottom: 0.5rem; }
-        .assistant-message ul { list-style: disc; padding-left: 1.5rem; margin-bottom: 0.5rem; }
-        .assistant-message ol { list-style: decimal; padding-left: 1.5rem; margin-bottom: 0.5rem; }
-        .assistant-message table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; display: block; overflow-x: auto; white-space: nowrap; }
-        .assistant-message th, .assistant-message td { border: 1px solid #d1d5db; padding: 8px 12px; text-align: left; }
-        .assistant-message th { background-color: #f3f4f6; font-weight: 600; }
-        .assistant-message code { background-color: #d1d5db; padding: 2px 4px; border-radius: 4px; font-family: monospace; }
-        .tab-button.active { border-bottom-color: #4f46e5; color: #4f46e5; font-weight: 600; }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
+
+        /* ## MODIFICATION START ## */
+        /* --- Styles for the new Column Manager Popup --- */
+        .column-manager-popup {
+            position: absolute;
+            z-index: 1000;
+            background-color: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            padding: 1rem;
+            width: 280px;
+        }
+        .column-manager-popup h4 {
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .column-manager-popup ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .column-manager-popup li {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            cursor: grab;
+            user-select: none;
+            background-color: #f9fafb;
+            border: 1px solid #e5e7eb;
+            margin-bottom: 4px;
+            border-radius: 4px;
+        }
+        .column-manager-popup li.dragging {
+            opacity: 0.5;
+            background-color: #dbeafe;
+        }
+        .column-manager-popup li input {
+            margin-right: 10px;
+        }
+        /* ## MODIFICATION END ## */
+
     </style>
 </head>
 <body class="bg-gray-100">
@@ -115,18 +138,17 @@
         </div>
         <div id="sidebar-content">
             <ul>
-                <li id="dashboard-option" class="flex items-center p-2 hover:bg-gray-300 rounded cursor-pointer"><img src="images/Dashboard.png" alt="Dashboard Icon" class="h-4 w-4 flex-shrink-0"><span class="option-text text-xs ml-3">Dashboard</span></li>
-                <li id="bom-viewer-option" class="flex items-center p-2 hover:bg-gray-300 rounded cursor-pointer"><img src="images/BOM_Viewer.png" alt="BOM Viewer Icon" class="h-4 w-4 flex-shrink-0"><span class="option-text text-xs ml-3">BOM Viewer</span></li>
-                <li id="constraint-analysis-option" class="flex items-center p-2 hover:bg-gray-300 rounded cursor-pointer"><img src="images/Constraints.png" alt="Constraints Icon" class="h-4 w-4 flex-shrink-0"><span class="option-text text-xs ml-3">Constraints</span></li>
-                <li id="new-chat-option" class="flex items-center p-2 hover:bg-gray-300 rounded cursor-pointer"><img src="images/New_Chat.png" alt="New Chat Icon" class="h-4 w-4 flex-shrink-0"><span class="option-text text-xs ml-3">New Chat</span></li>
+                <li id="dashboard-option" class="flex items-center p-2 hover:bg-gray-300 rounded cursor-pointer"><img src="images/Dashboard.png" alt="Dashboard Icon" class="h-5 w-5 flex-shrink-0"><span class="option-text ml-3">Dashboard</span></li>
+                <li id="bom-viewer-option" class="flex items-center p-2 hover:bg-gray-300 rounded cursor-pointer"><img src="images/BOM_Viewer.png" alt="BOM Viewer Icon" class="h-5 w-5 flex-shrink-0"><span class="option-text ml-3">BOM Viewer</span></li>
+                <li id="new-chat-option" class="flex items-center p-2 hover:bg-gray-300 rounded cursor-pointer"><img src="images/New_Chat.png" alt="New Chat Icon" class="h-5 w-5 flex-shrink-0"><span class="option-text ml-3">New Chat</span></li>
             </ul>
             <h4 class="px-2 mt-4 mb-2 font-semibold text-xs text-gray-500 tracking-wider option-text">Chats</h4>
             <div id="chat-history-list" class="flex-1 overflow-y-auto"></div>
         </div>
     </div>
 
-    <main id="main-content" class="p-1">
-        <div id="dashboard-section" class="px-2 py-1">
+    <main id="main-content">
+        <div id="dashboard-section" class="px-8 py-4">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-2xl font-bold text-gray-800 mr-auto">Dashboard Overview</h2>
                 <div id="quarter-filter-bar" class="collapsed">
@@ -136,19 +158,20 @@
             </div>
             
             <div id="main-cards-container">
-                <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+                <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
                     <div class="bg-white rounded-xl shadow-lg p-4 hover:shadow-2xl transition-shadow duration-300"><h3 class="text-sm font-medium text-gray-500 uppercase">Total Demand at Risk</h3><p id="total-demand-at-risk" class="mt-1 text-2xl font-bold text-red-600">$0</p></div>
                     <div id="affected-orders-card" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
                         <h3 class="text-sm font-medium text-gray-500 uppercase">Affected Orders</h3>
                         <p id="affected-orders" class="mt-1 text-2xl font-bold text-red-600">0</p>
                     </div>
                     <div id="broken-networks-card" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300"><h3 class="text-sm font-medium text-gray-500 uppercase">Broken Networks</h3><p id="broken-networks" class="mt-1 text-2xl font-bold text-orange-500">0</p></div>
+                    <div id="bottlenecks-card" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300"><h3 class="text-sm font-medium text-gray-500 uppercase">Bottlenecks</h3><p id="bottlenecks-count" class="mt-1 text-2xl font-bold text-yellow-500">0</p></div>
                 </section>
             </div>
 
             <div id="dashboard-content-area">
                 <section id="news-matrix-section" class="bg-white rounded-xl shadow-lg overflow-x-auto">
-                </section>
+                    </section>
                 
                 <div id="affected-orders-section" class="hidden">
                     <div class="max-w-2xl">
@@ -169,12 +192,13 @@
                     </div>
                 </div>
 
+                <div id="bottlenecks-subcards-section" class="hidden"><div class="max-w-2xl"><section class="grid grid-cols-1 sm:grid-cols-2 gap-6"><div id="bottleneck-resources-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300"><div class="flex items-baseline justify-between"><h4 class="text-base font-bold text-cyan-800">Resources</h4><span id="bottleneck-resources-count" class="text-lg font-bold text-cyan-800">0</span></div></div><div id="bottleneck-skus-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300"><div class="flex items-baseline justify-between"><h4 class="text-base font-bold text-indigo-800">SKU</h4><span id="bottleneck-skus-count" class="text-lg font-bold text-indigo-800">0</span></div></div></section></div></div>
                 <div id="broken-networks-section" class="hidden"><div class="max-w-2xl"><section class="grid grid-cols-1 sm:grid-cols-2 gap-6"><div id="broken-sku-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300"><div class="flex items-baseline justify-between"><h4 class="text-base font-bold text-blue-800">Broken SKU</h4><span id="broken-skus-count" class="text-lg font-bold text-blue-800">0</span></div></div><div id="broken-demand-network-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300"><div class="flex items-baseline justify-between"><h4 class="text-base font-bold text-red-800">Broken FG</h4><span id="broken-fg-networks-count" class="text-lg font-bold text-red-800">0</span></div></div></section></div></div>
                 <div id="results-container" class="hidden"></div>
             </div>
         </div>
         
-        <div id="bom-viewer-wrapper" class="hidden w-full mx-auto flex flex-col px-2 py-1">
+        <div id="bom-viewer-wrapper" class="hidden w-full mx-auto flex flex-col px-8 py-4">
             <div class="w-full flex justify-center">
                  <div id="sku-input-section"><div class="grid grid-cols-1 md:grid-cols-1 gap-6"><div class="bg-white rounded-xl shadow-lg p-4"><div class="flex items-center space-x-2"><input type="text" id="item-input" placeholder="Enter Item" class="w-60 px-3 py-1 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"><input type="text" id="loc-input" placeholder="Enter Location" class="w-60 px-3 py-1 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"><button id="get-sku-details-btn" class="px-2 py-1 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex-shrink-0"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" /></svg></button><button id="get-network-btn" disabled class="px-4 py-1 bg-gray-300 text-gray-800 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 flex-shrink-0 whitespace-nowrap">Show Network</button></div></div></div></div>
             </div>
@@ -184,19 +208,6 @@
         <div id="chat-section" class="hidden h-full flex-grow flex flex-col relative">
             <div class="flex-1 flex flex-col overflow-y-auto"><div id="chat-welcome" class="flex flex-col justify-center items-center"><img src="images/ElevaAI_short_logo.svg" class="w-16 h-16 mb-4" alt="Eleva AI Logo"><p class="text-2xl font-medium text-gray-600">How can I help today?</p></div><div id="chat-log" class="hidden p-8 flex flex-col space-y-4"></div></div>
             <div id="chat-input-container" class="p-4 w-full transition-all duration-500 ease-in-out"><div class="flex items-center space-x-2 max-w-4xl mx-auto w-full"><input type="text" id="chat-input" placeholder="Ask about your supply chain..." class="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500"><button id="chat-send-btn" class="bg-blue-600 text-white rounded-full p-2 hover:bg-blue-700 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg></button></div></div>
-        </div>
-        
-        <div id="constraint-analysis-section" class="hidden py-1">
-            <div class="flex justify-between items-center mb-4 px-2">
-                <h2 class="text-2xl font-bold text-gray-800 mr-auto">Constraints</h2>
-                <button id="ca-toggle-cards-btn" class="p-2 rounded-full hover:bg-gray-200 transition-colors ml-4" title="Toggle Constraint Cards"></button>
-            </div>
-            
-            <div id="ca-cards-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 px-2">
-            </div>
-
-            <div id="ca-results-container" class="mt-6">
-            </div>
         </div>
             
         <div id="node-properties-modal" class="modal hidden fixed inset-0 bg-gray-900 bg-opacity-50 items-center justify-center z-50">

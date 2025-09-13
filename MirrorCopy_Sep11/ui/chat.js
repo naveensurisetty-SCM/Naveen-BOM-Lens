@@ -1,3 +1,5 @@
+// ui/chat.js
+
 let currentChatId = null;
 
 function getChatHistory() { return JSON.parse(localStorage.getItem('chatHistory') || '[]'); }
@@ -25,26 +27,15 @@ function showThinkingIndicator() {
     return messageDiv;
 }
 
-// ## MODIFICATION START ##
 function addMessageToLog(message, sender) {
     const chatLog = document.getElementById('chat-log');
     const messageContainer = document.createElement('div');
     messageContainer.classList.add('p-3', 'rounded-lg', 'max-w-xs', 'lg:max-w-4xl', 'break-words');
     messageContainer.classList.add(sender === 'user' ? 'user-message' : 'assistant-message');
-
-    if (sender === 'assistant') {
-        // Use Marked to parse Markdown and DOMPurify to sanitize the result for security
-        const dirtyHtml = marked.parse(message);
-        messageContainer.innerHTML = DOMPurify.sanitize(dirtyHtml);
-    } else {
-        // User messages are always plain text
-        messageContainer.textContent = message;
-    }
-    
+    messageContainer.textContent = message;
     chatLog.appendChild(messageContainer);
     chatLog.scrollTop = chatLog.scrollHeight;
 }
-// ## MODIFICATION END ##
 
 function handleChatSubmit(renderChatHistoryFunc) {
     const chatInput = document.getElementById('chat-input');
@@ -83,20 +74,10 @@ function handleChatSubmit(renderChatHistoryFunc) {
     }
     saveChatHistory(history); 
 
-    const historyForApi = currentChat.messages
-        .slice(0, -1) 
-        .map(msg => ({
-            role: msg.sender === 'user' ? 'user' : 'model',
-            parts: [{ text: msg.text }]
-        }));
-
     fetch('http://127.0.0.1:5000/api/chat', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ 
-            message: userMessage, 
-            history: historyForApi
-        })
+        body: JSON.stringify({ message: userMessage })
     })
     .then(response => response.json())
     .then(data => {

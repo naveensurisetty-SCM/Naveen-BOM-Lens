@@ -1,11 +1,9 @@
+// main.js
 import { initSidebar } from './ui/sidebar.js';
-import { initDashboard, fetchDashboardData } from './ui/dashboard.js';
+import { initDashboard, fetchDashboardData } from './ui/dashboard.js'; // Import fetchDashboardData
 import { initNews } from './ui/news.js';
 import { initBomViewer } from './ui/bomViewer.js';
 import { initChat, startNewChat } from './ui/chat.js';
-// ## MODIFICATION START ##
-import { initConstraintAnalysis } from './ui/constraintAnalysis.js';
-// ## MODIFICATION END ##
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -13,12 +11,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const dashboardSection = document.getElementById('dashboard-section');
     const bomViewerWrapper = document.getElementById('bom-viewer-wrapper');
     const chatSection = document.getElementById('chat-section');
-    // ## MODIFICATION START ##
-    const constraintAnalysisSection = document.getElementById('constraint-analysis-section');
-    // ## MODIFICATION END ##
+    const newsMatrixSection = document.getElementById('news-matrix-section');
     
     const contentPanels = [
-        document.getElementById('news-matrix-section'), 
+        newsMatrixSection, 
         document.getElementById('broken-networks-section'), 
         document.getElementById('bottlenecks-subcards-section'), 
         document.getElementById('results-container'), 
@@ -29,41 +25,28 @@ document.addEventListener('DOMContentLoaded', () => {
         contentPanels.forEach(panel => { if (panel) panel.classList.add('hidden'); });
         if (elementToShow) { elementToShow.classList.remove('hidden'); }
     }
-
-    // ## MODIFICATION START ##
-    function hideAllViews() {
-        dashboardSection.classList.add('hidden');
-        bomViewerWrapper.classList.add('hidden');
-        chatSection.classList.add('hidden');
-        constraintAnalysisSection.classList.add('hidden');
-    }
-    // ## MODIFICATION END ##
     
     function showDashboard() {
-        hideAllViews();
         dashboardSection.classList.remove('hidden');
-        showDashboardContent(document.getElementById('news-matrix-section'));
+        bomViewerWrapper.classList.add('hidden');
+        chatSection.classList.add('hidden');
+        showDashboardContent(newsMatrixSection);
     }
     
     function showBomViewer() {
-        hideAllViews();
+        dashboardSection.classList.add('hidden');
         bomViewerWrapper.classList.remove('hidden');
+        chatSection.classList.add('hidden');
         document.getElementById('sku-properties-display').classList.add('hidden');
         const oldGraph = document.getElementById('bom-viewer-graph');
         if (oldGraph) oldGraph.remove();
     }
     
     function showChatView() {
-        hideAllViews();
+        dashboardSection.classList.add('hidden');
+        bomViewerWrapper.classList.add('hidden');
         chatSection.classList.remove('hidden');
     }
-
-    // ## MODIFICATION START ##
-    function showConstraintAnalysis() {
-        hideAllViews();
-        constraintAnalysisSection.classList.remove('hidden');
-    }
-    // ## MODIFICATION END ##
 
     // --- Initializations from Modules ---
     initSidebar();
@@ -71,10 +54,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initNews();
     initBomViewer(showDashboardContent);
     initChat(showChatView, startNewChat, () => renderChatHistory(showChatView));
-    // ## MODIFICATION START ##
-    initConstraintAnalysis();
-    // ## MODIFICATION END ##
-
 
     // --- Main Navigation ---
     document.getElementById('dashboard-option').addEventListener('click', showDashboard);
@@ -83,9 +62,6 @@ document.addEventListener('DOMContentLoaded', () => {
         showChatView();
         startNewChat();
     });
-    // ## MODIFICATION START ##
-    document.getElementById('constraint-analysis-option').addEventListener('click', showConstraintAnalysis);
-    // ## MODIFICATION END ##
 
     // --- Initial View ---
     showDashboard();

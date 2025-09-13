@@ -1,12 +1,10 @@
-// ui/dashboard.js
-
 import { planConfig } from '../config.js';
-import { renderNetworkGraph } from './bomViewer.js';
+import { renderNetworkGraph, fetchResourceNetworkGraph } from './bomViewer.js';
 
 let lastTableRenderFunction = null;
 
 // This helper function creates the popup for managing columns
-export function createColumnManagerPopup(table, settingsButton) {
+function createColumnManagerPopup(table, settingsButton) {
     // Close any existing popups first
     document.querySelectorAll('.column-manager-popup').forEach(p => p.remove());
 
@@ -62,9 +60,7 @@ export function createColumnManagerPopup(table, settingsButton) {
         });
         item.addEventListener('dragend', () => {
             setTimeout(() => {
-                if (draggedItem) {
-                    draggedItem.classList.remove('dragging');
-                }
+                draggedItem.classList.remove('dragging');
                 draggedItem = null;
             }, 0);
         });
@@ -145,6 +141,81 @@ function createHeaderWithBackButton(title, backFunction, tableInstance = null) {
     header.appendChild(titleEl);
     header.appendChild(buttonGroup);
     return header;
+}
+
+function createResourceTable(title, data, messageIfEmpty, backFunction, showDashboardContent) {
+    const resultsContainer = document.getElementById('results-container');
+    const renderFunc = () => {
+        lastTableRenderFunction = renderFunc;
+        resultsContainer.innerHTML = ''; 
+        
+        if (!data || data.length === 0) {
+            resultsContainer.appendChild(createHeaderWithBackButton(title, backFunction));
+            resultsContainer.innerHTML += `<p class="text-gray-500">${messageIfEmpty}</p>`;
+            return;
+        }
+
+        const tableContainer = document.createElement('div');
+        tableContainer.className = 'tabulator-creative';
+        
+        const tableData = data.map(node => node.properties);
+        const allKeys = new Set(data.flatMap(node => Object.keys(node.properties)));
+        const sortedKeys = ['res_id', ...Array.from(allKeys).filter(key => key !== 'res_id').sort()];
+
+        const columns = sortedKeys.map(key => {
+            const columnDef = {
+                title: key.replace(/_/g, ' '),
+                field: key,
+                headerHozAlign: "center",
+                hozAlign: "center",
+                resizable: true,
+                headerSort: true,
+            };
+
+            if (key === 'res_id') {
+                columnDef.formatter = function(cell) {
+                    const resId = cell.getValue();
+                    const container = document.createElement("div");
+                    container.classList.add("flex", "items-center", "justify-center", "space-x-2");
+                    container.innerHTML = `<span>${resId}</span>`;
+                    
+                    const button = document.createElement("button");
+                    button.classList.add("resource-network-btn", "px-2", "py-1", "bg-cyan-500", "text-white", "rounded-lg", "text-xs", "hover:bg-cyan-600");
+                    button.dataset.resId = resId;
+                    button.textContent = "Show Network";
+                    button.onclick = (e) => {
+                        e.stopPropagation();
+                        const networkTitle = `Network for Resource ${resId}`;
+                        resultsContainer.innerHTML = '';
+                        resultsContainer.appendChild(createHeaderWithBackButton(networkTitle, renderFunc));
+                        fetchResourceNetworkGraph(resId, networkTitle, resultsContainer);
+                        showDashboardContent(resultsContainer);
+                    };
+                    container.appendChild(button);
+                    return container;
+                };
+            }
+            return columnDef;
+        });
+
+        resultsContainer.appendChild(tableContainer);
+        const table = new Tabulator(tableContainer, { // Create table instance
+            data: tableData,
+            columns: columns,
+            layout: "fitDataStretch",
+            movableColumns: true,
+            classes: "tabulator-creative",
+            persistence: {
+                sort: true,
+                columns: true,
+            },
+            persistenceID: `dashboard-table-${title.replace(/\s+/g, '-')}`,
+        });
+        
+        // Add header after table is initialized to pass the instance
+        resultsContainer.prepend(createHeaderWithBackButton(title, backFunction, table));
+    };
+    renderFunc();
 }
 
 function createSkuTable(title, data, messageIfEmpty, backFunction, showDashboardContent) {
@@ -260,6 +331,7 @@ function createSkuTable(title, data, messageIfEmpty, backFunction, showDashboard
     renderFunc();
 }
 
+// ## MODIFICATION START ##
 function createOrderTable(title, data, messageIfEmpty, backFunction) {
     const resultsContainer = document.getElementById('results-container');
     const renderFunc = () => {
@@ -277,6 +349,7 @@ function createOrderTable(title, data, messageIfEmpty, backFunction) {
 
         const tableData = data.map(record => record.properties.full_record);
         
+        // Define the preferred column orders
         const customerOrderSequence = ['OrderID', 'Item', 'Loc', 'RGID', 'CGID', 'Delivery Date', 'Ship date WW', 'Ship Date'];
         const forecastOrderSequence = ['Seqnum', 'Item', 'ItemClass', 'U CAPACITY CORRIDOR', 'Loc', 'Dmd Group', 'Cust Tier', 'Priority', 'Intel WW', 'Qty', 'Descr'];
 
@@ -322,6 +395,7 @@ function createOrderTable(title, data, messageIfEmpty, backFunction) {
     };
     renderFunc();
 }
+// ## MODIFICATION END ##
 
 const renderAffectedCustOrdersForSku = (skuId, showDashboardContent) => {
     fetch('http://127.0.0.1:5000/api/affected-cust-orders-by-sku', {
@@ -391,6 +465,10 @@ export function fetchDashboardData(startDate = null, endDate = null) {
             document.getElementById('broken-networks').textContent = (data.brokenSkusCount || 0).toLocaleString();
             document.getElementById('broken-skus-count').textContent = (data.brokenSkusCount || 0).toLocaleString();
             document.getElementById('broken-fg-networks-count').textContent = (data.brokenFgNetworksCount || 0).toLocaleString();
+            const totalBottlenecks = (data.bottleneckResourcesCount || 0) + (data.bottleneckSkusCount || 0);
+            document.getElementById('bottlenecks-count').textContent = totalBottlenecks.toLocaleString();
+            document.getElementById('bottleneck-resources-count').textContent = (data.bottleneckResourcesCount || 0).toLocaleString();
+            document.getElementById('bottleneck-skus-count').textContent = (data.bottleneckSkusCount || 0).toLocaleString();
         })
         .catch(error => console.error('Error fetching dashboard data:', error));
 }
@@ -535,25 +613,34 @@ export function initDashboard(showDashboardContent) {
 
     // --- Drill-down Card Event Listeners ---
     const brokenNetworksCard = document.getElementById('broken-networks-card');
+    const bottlenecksCard = document.getElementById('bottlenecks-card');
     const affectedOrdersCard = document.getElementById('affected-orders-card');
     const brokenSkuCard = document.getElementById('broken-sku-card');
     const brokenDemandNetworkCard = document.getElementById('broken-demand-network-card');
+    const bottleneckResourcesCard = document.getElementById('bottleneck-resources-card');
+    const bottleneckSkusCard = document.getElementById('bottleneck-skus-card');
     const custOrdersCard = document.getElementById('cust-orders-card');
     const fcstOrdersCard = document.getElementById('fcst-orders-card');
     
     const resultsContainer = document.getElementById('results-container');
     const brokenNetworksSection = document.getElementById('broken-networks-section');
+    const bottlenecksSubcardsSection = document.getElementById('bottlenecks-subcards-section');
     const affectedOrdersSection = document.getElementById('affected-orders-section');
     
     brokenNetworksCard.addEventListener('click', () => showDashboardContent(brokenNetworksSection));
+    bottlenecksCard.addEventListener('click', () => showDashboardContent(bottlenecksSubcardsSection));
     affectedOrdersCard.addEventListener('click', () => showDashboardContent(affectedOrdersSection));
     
     const renderBrokenSkus = () => fetch('http://127.0.0.1:5000/api/broken-networks').then(r => r.json()).then(d => { createSkuTable('Broken SKUs', d, 'No broken SKUs found.', () => showDashboardContent(brokenNetworksSection), showDashboardContent); showDashboardContent(resultsContainer); });
+    const renderBottleneckResources = () => fetch('http://127.0.0.1:5000/api/bottleneck-resources').then(r => r.json()).then(d => { createResourceTable('Bottleneck Resources', d, 'No bottlenecked resources found.', () => showDashboardContent(bottlenecksSubcardsSection), showDashboardContent); showDashboardContent(resultsContainer); });
+    const renderBottleneckSkus = () => fetch('http://127.0.0.1:5000/api/bottleneck-skus').then(r => r.json()).then(d => { createSkuTable('Bottleneck SKUs', d, 'No bottlenecked SKUs found.', () => showDashboardContent(bottlenecksSubcardsSection), showDashboardContent); showDashboardContent(resultsContainer); });
     const renderBrokenDemand = () => fetch('http://127.0.0.1:5000/api/broken-demand-networks').then(r => r.json()).then(d => { createSkuTable('Broken Finished Goods', d, 'No broken FG networks found.', () => showDashboardContent(brokenNetworksSection), showDashboardContent); showDashboardContent(resultsContainer); });
     const renderAffectedCustOrders = () => fetch('http://127.0.0.1:5000/api/affected-cust-orders').then(r => r.json()).then(d => { createOrderTable('Affected Customer Orders', d, 'No affected customer orders found.', () => showDashboardContent(affectedOrdersSection)); showDashboardContent(resultsContainer); });
     const renderAffectedFcstOrders = () => fetch('http://127.0.0.1:5000/api/affected-fcst-orders').then(r => r.json()).then(d => { createOrderTable('Affected Forecast Orders', d, 'No affected forecast orders found.', () => showDashboardContent(affectedOrdersSection)); showDashboardContent(resultsContainer); });
     
     brokenSkuCard.addEventListener('click', renderBrokenSkus);
+    bottleneckResourcesCard.addEventListener('click', renderBottleneckResources);
+    bottleneckSkusCard.addEventListener('click', renderBottleneckSkus);
     brokenDemandNetworkCard.addEventListener('click', renderBrokenDemand);
     custOrdersCard.addEventListener('click', renderAffectedCustOrders);
     fcstOrdersCard.addEventListener('click', renderAffectedFcstOrders);
