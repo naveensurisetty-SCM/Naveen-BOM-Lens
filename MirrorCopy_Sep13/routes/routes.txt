@@ -1,0 +1,413 @@
+# routes/bom_viewer.py
+from flask import Blueprint, jsonify, request
+import os
+from utils.neo4j_handler import get_db, serialize_path
+
+bom_viewer_bp = Blueprint('bom_viewer_bp', __name__)
+
+@bom_viewer_bp.route('/api/sku-details', methods=['POST'])
+def get_sku_details():
+    try:
+        data = request.json
+        sku_id = data.get('sku_id')
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            result = session.run("MATCH (s:SKU {sku_id: $sku_id}) RETURN s", sku_id=sku_id).single()
+            return jsonify({'found': True, 'properties': dict(result['s'])}) if result else jsonify({'found': False})
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@bom_viewer_bp.route('/api/network-graph', methods=['POST'])
+def get_network_graph():
+    try:
+        data = request.json
+        sku_id = data.get('sku_id')
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            cypher_query = "MATCH (s:SKU {sku_id: $sku_id}) CALL(s) { WITH s OPTIONAL MATCH up = (u)-[:SOURCING|PRODUCES|CONSUMED_BY|PURCH_FROM*0..]->(s) RETURN collect(DISTINCT up) AS ups } CALL(s) { WITH s OPTIONAL MATCH down = (s)-[:SOURCING|PRODUCES|CONSUMED_BY|PURCH_FROM*0..]->(d) RETURN collect(DISTINCT down) AS downs } WITH s, [p IN ups WHERE p IS NOT NULL] + [p IN downs WHERE p IS NOT NULL] AS netPaths UNWIND netPaths AS p UNWIND nodes(p) AS n WITH s, collect(DISTINCT p) AS allPaths, collect(DISTINCT n) AS nodesInNet WITH allPaths, [n IN nodesInNet WHERE n:BOM] AS bomNodes UNWIND bomNodes AS bn OPTIONAL MATCH rp = (res:Res)-[:USES_RESOURCE]->(bn) WITH allPaths, collect(DISTINCT rp) AS resPaths WITH [p IN resPaths WHERE p IS NOT NULL] AS resPathsClean, allPaths WITH allPaths + resPathsClean AS combinedPaths UNWIND combinedPaths AS path RETURN path;"
+            result = session.run(cypher_query, sku_id=sku_id)
+            return jsonify([serialize_path(row['path']) for row in result])
+    except Exception as e:
+        return jsonify({'error': 'Internal server error.'}), 500
+
+@bom_viewer_bp.route('/api/network-with-shortest-path', methods=['POST'])
+def get_network_with_shortest_path():
+    try:
+        data = request.json
+        sku_id = data.get('sku_id')
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            full_network_query = "MATCH (s:SKU {sku_id: $sku_id}) CALL(s) { WITH s OPTIONAL MATCH up = (u)-[:SOURCING|PRODUCES|CONSUMED_BY|PURCH_FROM*0..]->(s) RETURN collect(DISTINCT up) AS ups } CALL(s) { WITH s OPTIONAL MATCH down = (s)-[:SOURCING|PRODUCES|CONSUMED_BY|PURCH_FROM*0..]->(d) RETURN collect(DISTINCT down) AS downs } WITH s, [p IN ups WHERE p IS NOT NULL] + [p IN downs WHERE p IS NOT NULL] AS netPaths UNWIND netPaths AS p UNWIND nodes(p) AS n WITH s, collect(DISTINCT p) AS allPaths, collect(DISTINCT n) AS nodesInNet WITH allPaths, [n IN nodesInNet WHERE n:BOM] AS bomNodes UNWIND bomNodes AS bn OPTIONAL MATCH rp = (res:Res)-[:USES_RESOURCE]->(bn) WITH allPaths, collect(DISTINCT rp) AS resPaths WITH [p IN resPaths WHERE p IS NOT NULL] AS resPathsClean, allPaths WITH allPaths + resPathsClean AS combinedPaths UNWIND combinedPaths AS path RETURN path;"
+            full_network_result = session.run(full_network_query, sku_id=sku_id)
+            full_network_paths = [serialize_path(row['path']) for row in full_network_result]
+            shortest_path_query = "MATCH (d:SKU {sku_id: $sku_id}) WHERE d.demand_sku = true AND coalesce(d.broken_bom,false) = false MATCH path = (srcNode)-[:CONSUMED_BY|PRODUCES|SOURCING|PURCH_FROM*1..50]->(d) WHERE (srcNode:PurchGroup OR (srcNode:SKU AND coalesce(srcNode.infinite_supply,false) = true)) AND NONE(n IN nodes(path) WHERE coalesce(n.broken_bom,false) = true) WITH d, path, head(nodes(path)) AS sourceNode, reduce(totalLT = 0, r IN relationships(path) | totalLT + coalesce(r.lead_time,0)) AS pathLeadTime WITH d, collect({p:path, src:sourceNode, leadTime:pathLeadTime}) AS allPaths WITH d, [x IN allPaths WHERE x.src:PurchGroup] AS purchPaths, [x IN allPaths WHERE NOT x.src:PurchGroup] AS skuPaths WITH d, CASE WHEN size(purchPaths) > 0 THEN purchPaths ELSE skuPaths END AS candidatePaths UNWIND candidatePaths AS cp WITH d, cp ORDER BY cp.leadTime ASC WITH d, collect(cp)[0] AS chosenPath WITH chosenPath, [n IN nodes(chosenPath.p) WHERE n:BOM] AS bomNodes UNWIND bomNodes AS bn OPTIONAL MATCH rp = (res:Res)-[:USES_RESOURCE]->(bn) WITH chosenPath, [p IN collect(DISTINCT rp) WHERE p IS NOT NULL] AS resPaths WITH resPaths + [chosenPath.p] AS allPaths UNWIND allPaths AS path RETURN path;"
+            shortest_path_result = session.run(shortest_path_query, sku_id=sku_id)
+            shortest_path_paths = [serialize_path(row['path']) for row in shortest_path_result]
+        return jsonify({'full_network': full_network_paths, 'shortest_path': shortest_path_paths})
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@bom_viewer_bp.route('/api/resource-network', methods=['POST'])
+def get_resource_network():
+    try:
+        data = request.json
+        res_id = data.get('res_id')
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            cypher_query = "MATCH (r:Res {res_id: $res_id}) OPTIONAL MATCH rb = (r)-[:USES_RESOURCE]->(b:BOM) WITH r, collect(DISTINCT rb) AS resBomPaths, collect(DISTINCT b) AS startBomNodes UNWIND startBomNodes AS sb OPTIONAL MATCH p_prod = (sb)-[:PRODUCES]->(s:SKU) WITH r, resBomPaths, collect(DISTINCT p_prod) AS bomSkuPaths, collect(DISTINCT s) AS seedSkus UNWIND seedSkus AS seed CALL(seed) { WITH seed OPTIONAL MATCH up = (u)-[:SOURCING|PRODUCES|CONSUMED_BY|PURCH_FROM*0..]->(seed) RETURN collect(DISTINCT up) AS ups } CALL(seed) { WITH seed OPTIONAL MATCH down = (seed)-[:SOURCING|PRODUCES|CONSUMED_BY|PURCH_FROM*0..]->(d) RETURN collect(DISTINCT down) AS downs } WITH r, resBomPaths, bomSkuPaths, ([p IN ups WHERE p IS NOT NULL] + [p IN downs WHERE p IS NOT NULL]) AS sPaths WITH r, resBomPaths, bomSkuPaths, collect(sPaths) AS skuPathSets WITH r, resBomPaths, bomSkuPaths, reduce(acc = [], ps IN skuPathSets | acc + ps) AS skuPaths UNWIND skuPaths AS sp UNWIND nodes(sp) AS n WITH r, resBomPaths, bomSkuPaths, skuPaths, collect(DISTINCT n) AS nodesInNet WITH r, resBomPaths, bomSkuPaths, skuPaths, [x IN nodesInNet WHERE x:BOM] AS bomInNet UNWIND bomInNet AS bn OPTIONAL MATCH r2b = (r2:Res)-[:USES_RESOURCE]->(bn) WITH resBomPaths, bomSkuPaths, skuPaths, collect(DISTINCT r2b) AS extraResPaths WITH resBomPaths + bomSkuPaths + skuPaths + extraResPaths AS allPaths UNWIND allPaths AS path WITH path WHERE path IS NOT NULL RETURN DISTINCT path;"
+            result = session.run(cypher_query, res_id=res_id)
+            return jsonify([serialize_path(row['path']) for row in result])
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+		
+# routes/chat.py
+from flask import Blueprint, jsonify, request
+import os
+import re
+import google.generativeai as genai
+from utils.llm_tools import available_tools
+
+chat_bp = Blueprint('chat_bp', __name__)
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+@chat_bp.route('/api/chat', methods=['POST', 'OPTIONS'])
+def handle_chat():
+    if request.method == 'OPTIONS':
+        return '', 204
+    try:
+        if not GEMINI_API_KEY:
+            return jsonify({'response_type': 'text', 'data': "Error: GEMINI_API_KEY is not configured on the server."}), 500
+        
+        data = request.json
+        user_message = data.get('message', '')
+        history = data.get('history', [])
+                                                
+        system_instruction = (
+            "You are a helpful and expert supply chain assistant. Your primary goal is to answer user questions by using the tools provided. "
+            "You **must** use Markdown formatting in your responses to improve readability. Use lists, bold text, and tables where appropriate. "
+            "Here is a critical example of how to handle a follow-up question:\n"
+            "--- EXAMPLE START ---\n"
+            "USER: 'what are the broken skus?'\n"
+            "AI: (Calls `get_broken_networks_from_db` tool which returns a list of SKUs)\n"
+            "AI: 'Here are the top SKUs with broken networks: - 2000-231-476@SAL - 2000-321-901@SAL'\n"
+            "USER: 'summarize orders for them'\n"
+            "AI: (User said 'them', so I must look at the previous list of SKUs: ['2000-231-476@SAL', '2000-321-901@SAL']. I will now call the `get_order_summary_for_multiple_skus` tool with this list as the `sku_ids` argument.)\n"
+            "--- EXAMPLE END ---\n"
+            "If the user provides only one SKU, use the `get_order_summary_for_single_sku` tool. "
+            "If they refer to multiple SKUs from the context like in the example, you must extract them and use the `get_order_summary_for_multiple_skus` tool. "
+            "If asked to draw a network or graph, instruct the user to use the 'BOM Viewer'."
+        )
+
+        model = genai.GenerativeModel('gemini-1.5-flash', tools=list(available_tools.values()), system_instruction=system_instruction)
+                                                        
+        chat = model.start_chat(history=history, enable_automatic_function_calling=True)
+        
+        response = chat.send_message(user_message)
+        return jsonify({'response_type': 'text', 'data': response.text.replace('\\_', '_')})
+    except Exception as e:
+        return jsonify({'response_type': 'text', 'data': f"An error occurred: {e}"}), 500
+		
+# routes/constraint.py		
+from flask import Blueprint, jsonify, request
+import os
+from utils.neo4j_handler import get_db
+
+constraints_bp = Blueprint('constraints_bp', __name__)
+
+# ## MODIFICATION START ##
+@constraints_bp.route('/api/constraints/impacted-demands/summary', methods=['GET'])
+def get_impacted_demands_summary():
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            query = """
+            MATCH (c:Constraint)-[:IMPACTS_DEMAND]->(d:Demand)
+            RETURN count(DISTINCT d) AS orderCount, sum(d.qty) AS totalQty
+            """
+            result = session.run(query).single()
+            
+            data = {
+                'orderCount': result.get('orderCount') or 0,
+                'totalQty': result.get('totalQty') or 0
+            }
+            return jsonify(data)
+    except Exception as e:
+        print(f"An error occurred in get_impacted_demands_summary: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+# ## MODIFICATION END ##
+
+
+@constraints_bp.route('/api/constraints/impacted-demands', methods=['GET'])
+def get_impacted_demands():
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            query = """
+            MATCH (c:Constraint)-[:IMPACTS_DEMAND]->(d:Demand)
+            WITH d, collect(properties(c)) AS constraints
+            RETURN properties(d) AS demand, constraints
+            ORDER BY d.date
+            """
+            result = session.run(query)
+            
+            data = [dict(record) for record in result]
+            return jsonify(data)
+
+    except Exception as e:
+        print(f"An error occurred in get_impacted_demands: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@constraints_bp.route('/api/constraints/order-search', methods=['POST'])
+def search_order_constraints():
+    try:
+        data = request.json
+        order_id = data.get('orderId')
+        if not order_id:
+            return jsonify({'error': 'orderId is required'}), 400
+
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            query = """
+            MATCH (d:Demand)
+            WHERE d.orderId = $order_id OR d.seqnum = $order_id
+            OPTIONAL MATCH (d)<-[:IMPACTS_DEMAND]-(c:Constraint)
+            RETURN d, collect(c) AS constraints
+            LIMIT 1
+            """
+            result = session.run(query, order_id=order_id).single()
+
+            if not result:
+                return jsonify({'orderDetails': None, 'constraints': []})
+
+            order_details = dict(result['d'])
+            constraints = [dict(node) for node in result['constraints'] if node is not None]
+
+            return jsonify({'orderDetails': order_details, 'constraints': constraints})
+
+    except Exception as e:
+        print(f"An error occurred in search_order_constraints: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+# routes/dashboard.py
+from flask import Blueprint, jsonify, request
+import random
+import os
+from utils.neo4j_handler import get_db, serialize_record
+
+dashboard_bp = Blueprint('dashboard_bp', __name__)
+
+@dashboard_bp.route('/api/dashboard', methods=['GET'])
+def get_dashboard_data():
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            cust_order_query = "LOAD CSV WITH HEADERS FROM 'file:///custorder.csv' AS row WITH row, toFloat(row.Qty) AS qty WHERE trim(row.Item) <> '' AND trim(row.Loc) <> '' MATCH (s:SKU {sku_id: trim(row.Item) + '@' + trim(row.Loc)}) WHERE s.demand_sku = true AND s.broken_bom = true RETURN count(row) AS orderCount, sum(qty) AS totalQty"
+            cust_result = session.run(cust_order_query).single()
+            cust_orders_count = cust_result.get('orderCount', 0) or 0; cust_orders_qty = cust_result.get('totalQty', 0) or 0
+            
+            fcst_order_query = "LOAD CSV WITH HEADERS FROM 'file:///fcstorder.csv' AS row WITH row, toFloat(row.Qty) AS qty WHERE trim(row.Item) <> '' AND trim(row.Loc) <> '' MATCH (s:SKU {sku_id: trim(row.Item) + '@' + trim(row.Loc)}) WHERE s.demand_sku = true AND s.broken_bom = true RETURN count(row) AS orderCount, sum(qty) AS totalQty"
+            fcst_result = session.run(fcst_order_query).single()
+            fcst_orders_count = fcst_result.get('orderCount', 0) or 0; fcst_orders_qty = fcst_result.get('totalQty', 0) or 0
+            
+            total_affected_orders_count = cust_orders_count + fcst_orders_count
+            total_affected_orders_qty = cust_orders_qty + fcst_orders_qty
+            
+            res_count_result = session.run("MATCH (r:Res {bottleneck: true}) RETURN count(r) AS count").single()
+            sku_count_result = session.run("MATCH (s:SKU {bottleneck: true}) RETURN count(s) AS count").single()
+            bottleneck_res_count = res_count_result['count'] if res_count_result else 0
+            bottleneck_sku_count = sku_count_result['count'] if sku_count_result else 0
+            
+            broken_total_result = session.run("MATCH (s:SKU {broken_bom: true}) RETURN count(s) AS count").single()
+            broken_fg_result = session.run("MATCH (s:SKU {broken_bom: true, demand_sku: true}) RETURN count(s) AS count").single()
+            broken_skus_count = broken_total_result['count'] if broken_total_result else 0
+            broken_fg_count = broken_fg_result['count'] if broken_fg_result else 0
+        
+        data = { 'totalDemandAtRisk': random.randint(100000, 999999), 'affectedOrdersCount': total_affected_orders_count, 'affectedOrdersQty': total_affected_orders_qty, 'affectedCustOrdersCount': cust_orders_count, 'affectedCustOrdersQty': cust_orders_qty, 'affectedFcstOrdersCount': fcst_orders_count, 'affectedFcstOrdersQty': fcst_orders_qty, 'brokenSkusCount': broken_skus_count, 'brokenFgNetworksCount': broken_fg_count, 'bottleneckResourcesCount': bottleneck_res_count, 'bottleneckSkusCount': bottleneck_sku_count }
+        return jsonify(data)
+    except Exception as e:
+        print(f"An error occurred in get_dashboard_data: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@dashboard_bp.route('/api/broken-networks', methods=['GET'])
+def get_broken_networks():
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            result = session.run("MATCH (s:SKU) WHERE s.broken_bom = true RETURN s LIMIT 10")
+            return jsonify([{'id': record['s'].element_id, 'properties': dict(record['s'])} for record in result])
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@dashboard_bp.route('/api/bottleneck-resources', methods=['GET'])
+def get_bottleneck_resources():
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            result = session.run("MATCH (r:Res) WHERE r.bottleneck = true RETURN r LIMIT 10")
+            return jsonify([{'id': record['r'].element_id, 'properties': dict(record['r'])} for record in result])
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@dashboard_bp.route('/api/bottleneck-skus', methods=['GET'])
+def get_bottleneck_skus():
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            result = session.run("MATCH (s:SKU) WHERE s.bottleneck = true RETURN s LIMIT 10")
+            return jsonify([{'id': record['s'].element_id, 'properties': dict(record['s'])} for record in result])
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@dashboard_bp.route('/api/broken-demand-networks', methods=['GET'])
+def get_broken_demand_networks():
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            result = session.run("MATCH (s:SKU) WHERE s.broken_bom = true AND s.demand_sku = true RETURN s LIMIT 10")
+            return jsonify([{'id': record['s'].element_id, 'properties': dict(record['s'])} for record in result])
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@dashboard_bp.route('/api/affected-cust-orders', methods=['GET'])
+def get_affected_cust_orders():
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            query = "LOAD CSV WITH HEADERS FROM 'file:///custorder.csv' AS row WITH row, trim(row.Item) AS item, trim(row.Loc) AS loc, toFloat(row.Qty) AS qty, trim(row.Item) + '@' + trim(row.Loc) AS sku_id WHERE item <> '' AND loc <> '' MATCH (s:SKU {sku_id: sku_id}) WHERE s.demand_sku = true AND s.broken_bom = true RETURN s.sku_id AS sku_id, row AS full_record ORDER BY s.sku_id, qty DESC LIMIT 100;"
+            result = session.run(query)
+            return jsonify([serialize_record(record) for record in result])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@dashboard_bp.route('/api/affected-fcst-orders', methods=['GET'])
+def get_affected_fcst_orders():
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            query = "LOAD CSV WITH HEADERS FROM 'file:///fcstorder.csv' AS row WITH row, trim(row.Item) AS item, trim(row.Loc) AS loc, toFloat(row.Qty) AS qty, trim(row.Item) + '@' + trim(row.Loc) AS sku_id WHERE item <> '' AND loc <> '' MATCH (s:SKU {sku_id: sku_id}) WHERE s.demand_sku = true AND s.broken_bom = true RETURN s.sku_id AS sku_id, row AS full_record ORDER BY s.sku_id, qty DESC LIMIT 100;"
+            result = session.run(query)
+            return jsonify([serialize_record(record) for record in result])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@dashboard_bp.route('/api/affected-cust-orders-by-sku', methods=['POST'])
+def get_affected_cust_orders_by_sku():
+    try:
+        data = request.json
+        sku_id = data.get('sku_id')
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            query = "LOAD CSV WITH HEADERS FROM 'file:///custorder.csv' AS row WITH row WHERE (trim(row.Item) + '@' + trim(row.Loc)) = $sku_id RETURN $sku_id AS sku_id, row AS full_record ORDER BY toFloat(row.Qty) DESC"
+            result = session.run(query, sku_id=sku_id)
+            return jsonify([serialize_record(record) for record in result])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@dashboard_bp.route('/api/affected-fcst-orders-by-sku', methods=['POST'])
+def get_affected_fcst_orders_by_sku():
+    try:
+        data = request.json
+        sku_id = data.get('sku_id')
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            query = "LOAD CSV WITH HEADERS FROM 'file:///fcstorder.csv' AS row WITH row WHERE (trim(row.Item) + '@' + trim(row.Loc)) = $sku_id RETURN $sku_id AS sku_id, row AS full_record ORDER BY toFloat(row.Qty) DESC"
+            result = session.run(query, sku_id=sku_id)
+            return jsonify([serialize_record(record) for record in result])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+# routes/news.py
+from flask import Blueprint, jsonify, request
+import os
+import requests
+import json
+import google.generativeai as genai
+
+news_bp = Blueprint('news_bp', __name__)
+
+NEWS_API_KEY = os.getenv("NEWS_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+NEWS_ANALYSIS_CACHE = {}
+
+def fetch_news_for_category(query, api_key):
+    if not api_key:
+        print(f"WARNING: NEWS_API_KEY not found. Returning empty list for query: '{query}'")
+        return []
+
+    base_url = "https://newsapi.org/v2/everything"
+    params = { 'q': f"(semiconductor OR chip) AND ({query})", 'sortBy': 'relevancy', 'language': 'en', 'pageSize': 5, 'apiKey': api_key }
+    try:
+        response = requests.get(base_url, params=params)
+        response.raise_for_status()
+        articles = response.json().get("articles", [])
+        return [
+            {
+                "title": article.get("title"), "description": article.get("description"),
+                "url": article.get("url"), "source": article.get("source", {}).get("name"), 
+                "imageUrl": article.get("urlToImage")
+            }
+            for article in articles if article.get("title") and article.get("url")
+        ]
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching live news for query '{query}': {e}. Returning empty list.")
+        return []
+
+@news_bp.route('/api/supply-chain-news', methods=['GET'])
+def get_supply_chain_news():
+    categories = {
+        "supplier": "supplier OR factory OR manufacturing", "logistics": "logistics OR shipping OR port OR freight",
+        "market": "demand OR market OR sales", "geopolitical": "geopolitical OR tariff OR trade OR government",
+        "compliance": "compliance OR regulation OR environment"
+    }
+    news_results = {key: fetch_news_for_category(query, NEWS_API_KEY) for key, query in categories.items()}
+    return jsonify(news_results)
+
+@news_bp.route('/api/analyze-article', methods=['POST'])
+def analyze_article():
+    data = request.json
+    article = data.get('article', {})
+    
+    title = article.get('title')
+    text_to_analyze = article.get('description') or title
+    
+    default_impacts = {
+        "Supply Availability": "Neutral", "Raw Material Cost": "Neutral",
+        "Logistics & Freight Cost": "Neutral", "Market Demand": "Neutral", "OTIF": "Neutral"
+    }
+
+    if not text_to_analyze: return jsonify(default_impacts)
+    
+    cache_key = title 
+    if not GEMINI_API_KEY:
+        print("WARNING: GEMINI_API_KEY not found. Skipping AI analysis.")
+        return jsonify(default_impacts)
+    if cache_key in NEWS_ANALYSIS_CACHE:
+        return jsonify(NEWS_ANALYSIS_CACHE[cache_key])
+
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    prompt = f"""You are a supply chain risk analyst for Intel, a major US semiconductor manufacturer. Your task is to read a news summary and determine its likely impact (Positive, Negative, or Neutral) on five specific supply chain KPIs. Respond only with a JSON object.
+The KPIs are:
+1. Supply Availability: Ability to get raw materials from suppliers to US factories. Negative for disruptions, Positive for new sources.
+2. Raw Material Cost: Cost of components. Negative for tariffs/inflation, Positive for subsidies/discounts.
+3. Logistics & Freight Cost: Cost to ship materials internationally. Negative for port congestion, Positive for new shipping lanes.
+4. Market Demand: Customer demand for finished goods. Positive for strong sales, Negative for recession fears.
+5. OTIF (On-Time In-Full): Ability to deliver finished chips on time. Negative impact on Supply or Logistics often causes a Negative impact here.
+News Summary: "{text_to_analyze}"
+Your Response (JSON only):"""
+    
+    try:
+        response = model.generate_content(prompt)
+        cleaned_text = response.text.strip().replace("```json", "").replace("```", "").strip()
+        parsed_response = json.loads(cleaned_text)
+
+        final_impacts = default_impacts.copy()
+        if isinstance(parsed_response, dict):
+            final_impacts.update(parsed_response)
+
+        NEWS_ANALYSIS_CACHE[cache_key] = final_impacts
+        return jsonify(final_impacts)
+    except Exception as e:
+        print(f"Error analyzing content with AI: '{text_to_analyze[:50]}...': {e}. Returning neutral impacts.")
+        NEWS_ANALYSIS_CACHE[cache_key] = default_impacts
+        return jsonify(default_impacts)
+# This file can be empty.

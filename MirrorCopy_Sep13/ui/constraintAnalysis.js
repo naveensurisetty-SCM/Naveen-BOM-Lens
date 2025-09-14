@@ -12,12 +12,7 @@ function createCaHeader(title, backFunction = null) {
     const titleEl = document.createElement('h2');
     titleEl.className = 'text-xl font-bold text-gray-800';
     titleEl.textContent = title;
-    
-    const buttonGroup = document.createElement('div');
-    buttonGroup.className = 'flex items-center space-x-2';
-    
     header.appendChild(titleEl);
-    header.appendChild(buttonGroup);
 
     if (backFunction) {
         const backButton = document.createElement('button');
@@ -25,7 +20,7 @@ function createCaHeader(title, backFunction = null) {
         backButton.title = 'Back';
         backButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" /></svg>`;
         backButton.addEventListener('click', backFunction);
-        buttonGroup.appendChild(backButton);
+        header.appendChild(backButton);
     }
     return header;
 }
@@ -187,7 +182,7 @@ async function renderImpactedDemandsTable() {
     }
 }
 
-function renderBottleneckView(summaryData) {
+function renderBottleneckView() {
     resultsContainer.innerHTML = '';
     resultsContainer.appendChild(createCaHeader("Bottleneck Analysis"));
 
@@ -210,163 +205,21 @@ function renderBottleneckView(summaryData) {
         </section>
     `;
     resultsContainer.appendChild(subcardsContent);
-    
-    document.getElementById('ca-bottleneck-resources-count-drilldown').textContent = (summaryData.constrainedResourceCount || 0).toLocaleString();
-    document.getElementById('ca-bottleneck-skus-count-drilldown').textContent = (summaryData.bottleneckSkusCount || 0).toLocaleString();
-    
-    document.getElementById('ca-bottleneck-resources-card-drilldown').addEventListener('click', () => renderConstrainedResourcesList(summaryData));
+
+    // Fetch counts and add event listeners
+    fetch('/api/constraints/summary').then(res => res.json()).then(summary => {
+        document.getElementById('ca-bottleneck-resources-count-drilldown').textContent = (summary.constrainedResourceCount || 0).toLocaleString();
+        document.getElementById('ca-bottleneck-skus-count-drilldown').textContent = (summary.bottleneckSkusCount || 0).toLocaleString();
+    });
+
+    document.getElementById('ca-bottleneck-resources-card-drilldown').addEventListener('click', renderConstrainedResourcesTable);
     document.getElementById('ca-bottleneck-skus-card-drilldown').addEventListener('click', renderBottleneckSkusTable);
 }
 
-
-function showDemandsModal(demands, resourceId, week) {
-    const modal = document.getElementById('demands-modal');
-    const titleEl = document.getElementById('demands-modal-title');
-    const contentEl = document.getElementById('demands-modal-content');
-    const closeBtn = modal.querySelector('.close-demands-modal');
-
-    titleEl.textContent = `Demands contributing to load for ${resourceId} in Week ${week}`;
-    contentEl.innerHTML = '';
-
-    if (!demands || demands.length === 0) {
-        contentEl.innerHTML = '<p class="text-gray-500">No specific demands found for this period.</p>';
-    } else {
-        new Tabulator(contentEl, {
-            data: demands,
-            layout: "fitDataStretch",
-            maxHeight: "80%",
-            columns: [
-                { title: "Order/Seq", field: "demand.orderId", formatter: (cell) => cell.getValue() || cell.getRow().getData().demand.seqnum },
-                { title: "SKU", field: "demand.sku_id", widthGrow: 2 },
-                { title: "Type", field: "demand.type" },
-                { title: "Load Qty", field: "loadQty", hozAlign: "right" },
-            ]
-        });
-    }
-
-    modal.classList.remove('hidden');
-    
-    const closeModal = () => modal.classList.add('hidden');
-    closeBtn.onclick = closeModal;
-    modal.onclick = (event) => {
-        if (event.target === modal) {
-            closeModal();
-        }
-    };
-}
-
-
-async function renderResourceTimePhase(resourceId = null) {
+// ## MODIFICATION START ## - This function is now refactored to use the manual rowFormatter method
+async function renderConstrainedResourcesTable() {
     resultsContainer.innerHTML = '';
-    const headerTitle = resourceId ? `Time-Phase for ${resourceId}` : "Resource Time-Phased Utilization";
-    const header = createCaHeader(headerTitle, renderConstrainedResourcesList);
-    resultsContainer.appendChild(header);
-    
-    const contentContainer = document.createElement('div');
-    contentContainer.className = 'px-2';
-    resultsContainer.appendChild(contentContainer);
-    contentContainer.innerHTML = `<div class="flex justify-center items-center p-8"><i class="fas fa-spinner fa-spin fa-2x text-gray-400"></i></div>`;
-
-    try {
-        const apiUrl = resourceId 
-            ? `/api/constraints/resource-time-phase?resId=${resourceId}`
-            : '/api/constraints/resource-time-phase';
-        const response = await fetch(apiUrl);
-
-        const data = await response.json();
-        contentContainer.innerHTML = '';
-
-        if (!data || data.length === 0 || !data[0].weeklyData) {
-            const errorMessage = resourceId ? `No time-phased data found for ${resourceId}.` : "No time-phased data found for constrained resources.";
-            contentContainer.innerHTML = `<p class="text-gray-500">${errorMessage}</p>`;
-            return;
-        }
-
-        const weeklyData = data[0].weeklyData;
-        const weeks = [...new Set(weeklyData.map(w => w.week))].sort((a, b) => a - b);
-        
-        const capacityRow = { measure: 'Total Capacity' };
-        const loadRow = { measure: 'Total Load' };
-        const utilRow = { measure: 'Utilization %' };
-
-        weeks.forEach(week => {
-            const weekData = weeklyData.find(w => w.week === week);
-            if (weekData) {
-                capacityRow[`WW${week}`] = weekData.total_capacity;
-                loadRow[`WW${week}`] = weekData.total_load;
-                utilRow[`WW${week}`] = weekData.utilization;
-            }
-        });
-
-        const tableData = [capacityRow, loadRow, utilRow];
-
-        const weekColumns = weeks.map(week => ({
-            title: `WW${week}`,
-            field: `WW${week}`,
-            hozAlign: "center",
-            headerVAlign: "middle",
-            formatter: (cell) => {
-                const value = cell.getValue();
-                const measure = cell.getRow().getData().measure;
-
-                if (value === null || typeof value === 'undefined') return "-";
-                
-                if (measure === 'Utilization %') {
-                    const utilPercent = (value * 100).toFixed(0);
-                    if (value > 1) {
-                        cell.getElement().style.backgroundColor = 'rgba(239, 68, 68, 0.2)';
-                        return `<strong class="text-red-600">${utilPercent}%</strong>`;
-                    } else if (value > 0.85) {
-                        cell.getElement().style.backgroundColor = 'rgba(245, 158, 11, 0.2)';
-                        return `<span class="text-amber-600">${utilPercent}%</span>`;
-                    }
-                    return `${utilPercent}%`;
-                }
-                
-                return Math.round(value).toLocaleString();
-            }
-        }));
-
-        const tableContainer = document.createElement('div');
-        tableContainer.className = 'tabulator-creative time-phase-table';
-        contentContainer.appendChild(tableContainer);
-
-        new Tabulator(tableContainer, {
-            data: tableData,
-            layout: "fitData",
-            columns: [
-                { title: "", field: "measure", frozen: true, width: 150, headerSort: false, cssClass: "font-bold" },
-                ...weekColumns
-            ],
-            cellClick: (e, cell) => {
-                const weekStr = cell.getField();
-                if (weekStr && weekStr.startsWith('WW')) {
-                    const week = parseInt(weekStr.replace('WW', ''));
-                    
-                    fetch('/api/constraints/demands-for-resource-week', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ resourceId: resourceId, week: week })
-                    })
-                    .then(res => res.json())
-                    .then(demands => {
-                        showDemandsModal(demands, resourceId, week);
-                    });
-                }
-            }
-        });
-
-    } catch(error) {
-        console.error("Error rendering time-phased view:", error);
-        contentContainer.innerHTML = `<p class="text-red-500">Could not load time-phased data.</p>`;
-    }
-}
-
-
-async function renderConstrainedResourcesList(summaryData) {
-    resultsContainer.innerHTML = '';
-    const header = createCaHeader("Constrained Resources", () => renderBottleneckView(summaryData));
-    resultsContainer.appendChild(header);
+    resultsContainer.appendChild(createCaHeader("Constrained Resources", renderBottleneckView));
     
     const contentContainer = document.createElement('div');
     contentContainer.className = 'px-2';
@@ -391,151 +244,75 @@ async function renderConstrainedResourcesList(summaryData) {
             data: data,
             maxHeight: "70vh", 
             layout: "fitDataStretch",
-            // ## MODIFICATION START ## - Logic updated to handle two expandable columns
             rowFormatter: function(row) {
                 const data = row.getData();
+                const constraints = data.constraints;
                 const rowElement = row.getElement();
 
-                // Create and append container for constraint details
-                if (data.constraintDetails && data.constraintDetails.length > 0) {
+                if (constraints && constraints.length > 0) {
                     const detailElement = document.createElement("div");
-                    detailElement.id = `constraints-detail-${data.properties.res_id}`;
                     detailElement.classList.add("hidden", "p-4", "bg-gray-50", "border-t", "text-left");
-                    
                     let html = '<ul class="space-y-2 list-disc list-inside">';
-                    data.constraintDetails.forEach(c_detail => {
-                        const utilPercent = (c_detail.constraint.utilization * 100).toFixed(0);
-                        html += `<li class="text-sm text-gray-700">Constraint in <strong>Week ${c_detail.constraint.week}</strong> at <strong class="text-red-600">${utilPercent}%</strong> utilization.</li>`;
+                    constraints.forEach(c => {
+                        const utilPercent = (c.utilization * 100).toFixed(0);
+                        html += `<li class="text-sm text-gray-700">Constraint in <strong>Week ${c.week}</strong> at <strong class="text-red-600">${utilPercent}%</strong> utilization.</li>`;
                     });
                     html += '</ul>';
                     detailElement.innerHTML = html;
                     rowElement.appendChild(detailElement);
-                }
-
-                // Create and append container for demand details
-                const totalDemands = data.constraintDetails.reduce((acc, cv) => acc + cv.demands.length, 0);
-                if (totalDemands > 0) {
-                    const demandsDetailElement = document.createElement("div");
-                    demandsDetailElement.id = `demands-detail-${data.properties.res_id}`;
-                    demandsDetailElement.classList.add("hidden", "p-0", "bg-gray-50", "border-t");
-                    rowElement.appendChild(demandsDetailElement);
-                }
-
-                // Attach event listener for the CONSTRAINTS arrow
-                const constraintsCell = row.getCell("constraints");
-                if (constraintsCell) {
-                    const handle = constraintsCell.getElement().querySelector(".expand-constraints");
-                    if (handle) {
-                        handle.addEventListener("click", (e) => {
-                            e.stopPropagation();
-                            document.getElementById(`constraints-detail-${data.properties.res_id}`).classList.toggle("hidden");
-                            handle.querySelector("i").classList.toggle("fa-caret-right");
-                            handle.querySelector("i").classList.toggle("fa-caret-down");
-                        });
-                    }
-                }
-                
-                // Attach event listener for the DEMANDS arrow
-                const demandsCell = row.getCell("demands");
-                if (demandsCell) {
-                    const handle = demandsCell.getElement().querySelector(".expand-demands");
-                    if (handle) {
-                        handle.addEventListener("click", (e) => {
-                            e.stopPropagation();
-                            const demandsContainer = document.getElementById(`demands-detail-${data.properties.res_id}`);
-                            demandsContainer.classList.toggle("hidden");
-                            handle.querySelector("i").classList.toggle("fa-caret-right");
-                            handle.querySelector("i").classList.toggle("fa-caret-down");
-
-                            // If we are showing it for the first time, build the inner table
-                            if (!demandsContainer.classList.contains("hidden") && !demandsContainer.hasChildNodes()) {
-                                let allDemands = [];
-                                data.constraintDetails.forEach(cd => {
-                                    cd.demands.forEach(demand => {
-                                        // Add constraint date to each demand for the new column
-                                        allDemands.push({ ...demand, constraintDate: `Week ${cd.constraint.week}` });
-                                    });
-                                });
-                                
-                                new Tabulator(demandsContainer, {
-                                    data: allDemands,
-                                    layout: "fitData",
-                                    columns: [
-                                        { title: "Constraint Week", field: "constraintDate" },
-                                        { title: "Order ID", field: "orderId" },
-                                        { title: "Seq Num", field: "seqnum" },
-                                        { title: "SKU", field: "sku_id", widthGrow: 2 },
-                                        { title: "Qty", field: "qty", hozAlign: "right" },
-                                        { title: "Type", field: "type" }
-                                    ]
-                                });
-                            }
-                        });
+                    
+                    const cellEl = row.getCell("constraints");
+                    if (cellEl) {
+                        const handle = cellEl.getElement().querySelector(".expand-handle");
+                        if (handle) {
+                            handle.addEventListener("click", (e) => {
+                                e.stopPropagation();
+                                detailElement.classList.toggle("hidden");
+                                handle.querySelector("i").classList.toggle("fa-caret-right");
+                                handle.querySelector("i").classList.toggle("fa-caret-down");
+                            });
+                        }
                     }
                 }
             },
             columns: [
                 { 
                     title: "Constraints", 
-                    field: "constraints", // Unique field name
+                    field: "constraints",
                     hozAlign: "center", 
                     width: 150,
                     headerSort: false,
                     formatter: (cell) => {
-                        const details = cell.getRow().getData().constraintDetails || [];
-                        const count = details.length;
+                        const constraints = cell.getValue() || [];
+                        const count = constraints.length;
                         if (count === 0) return "0";
-                        return `<span class="expand-constraints cursor-pointer text-indigo-600 hover:text-indigo-800"><i class="fas fa-caret-right fa-fw"></i> ${count}</span>`;
+                        return `<span class="expand-handle cursor-pointer text-indigo-600 hover:text-indigo-800"><i class="fas fa-caret-right fa-fw"></i> ${count}</span>`;
                     },
-                },
-                { 
-                    title: "Impacted Demands", 
-                    field: "demands", // Unique field name
-                    hozAlign: "center", 
-                    width: 200,
-                    headerSort: false,
-                    formatter: (cell) => {
-                        const details = cell.getRow().getData().constraintDetails || [];
-                        const count = details.reduce((acc, cv) => acc + cv.demands.length, 0);
-                        const qty = details.reduce((acc, cv) => acc + (cv.totalDemandQty || 0), 0);
-                        if (count === 0) return "0 - 0";
-                        return `<span class="expand-demands cursor-pointer text-orange-600 hover:text-orange-800"><i class="fas fa-caret-right fa-fw"></i> ${count} - ${Math.round(qty).toLocaleString()}</span>`;
-                    },
+                    sorter: (a,b) => (a?.length || 0) - (b?.length || 0)
                 },
                 { 
                     title: "Resource ID", 
                     field: "properties.res_id",
-                    widthGrow: 2,
                     formatter: (cell) => {
                         const resId = cell.getValue();
-                        const buttons = `
-                            <button class="ml-2 px-2 py-1 bg-cyan-500 text-white rounded-lg text-xs hover:bg-cyan-600" title="Show Network" data-res-id="${resId}" data-action="network">
-                                <i class="fas fa-project-diagram fa-fw"></i>
-                            </button>
-                            <button class="ml-1 px-2 py-1 bg-indigo-500 text-white rounded-lg text-xs hover:bg-indigo-600" title="View Time-Phase" data-res-id="${resId}" data-action="timephase">
-                                <i class="fas fa-calendar-alt fa-fw"></i>
-                            </button>
-                        `;
-                        return `<span>${resId}</span> ${buttons}`;
+                        return `<span>${resId}</span> <button class="ml-2 px-2 py-1 bg-cyan-500 text-white rounded-lg text-xs hover:bg-cyan-600" data-res-id="${resId}">Show Network</button>`;
                     }
                 },
+                { 
+                    title: "Description",
+                    field: "properties.res_descr",
+                    widthGrow: 2.5,
+                },
             ],
-            // ## MODIFICATION END ##
         });
-        
-        table.on("cellClick", function(e, cell){
-            const target = e.target.closest('button');
-            if (target && target.dataset.resId) {
-                const resId = target.dataset.resId;
-                const action = target.dataset.action;
 
-                if (action === 'network') {
-                    resultsContainer.innerHTML = '';
-                    resultsContainer.appendChild(createCaHeader(`Network for Resource ${resId}`, renderConstrainedResourcesList));
-                    fetchResourceNetworkGraph(resId, `Network for ${resId}`, resultsContainer);
-                } else if (action === 'timephase') {
-                    renderResourceTimePhase(resId);
-                }
+        table.on("cellClick", function(e, cell){
+            const target = e.target;
+            if (target && target.tagName === 'BUTTON' && target.dataset.resId) {
+                const resId = target.dataset.resId;
+                resultsContainer.innerHTML = '';
+                resultsContainer.appendChild(createCaHeader(`Network for Resource ${resId}`, renderConstrainedResourcesTable));
+                fetchResourceNetworkGraph(resId, `Network for ${resId}`, resultsContainer);
             }
         });
 
@@ -544,7 +321,7 @@ async function renderConstrainedResourcesList(summaryData) {
         contentContainer.innerHTML = `<p class="text-red-500">An error occurred while fetching data.</p>`;
     }
 }
-
+// ## MODIFICATION END ##
 
 async function renderBottleneckSkusTable() {
     resultsContainer.innerHTML = '';
@@ -617,46 +394,50 @@ function renderConstraintList(constraints, container) {
 }
 
 // --- Main initialization function ---
-export async function initConstraintAnalysis() {
+export async function renderConstraintCards() {
     cardsContainer.innerHTML = `<div class="flex justify-center items-center p-8"><i class="fas fa-spinner fa-spin fa-2x text-gray-400"></i></div>`;
-    resultsContainer.innerHTML = ''; 
-
+    
     try {
-        const response = await fetch('/api/constraints/summary');
-        const summaryData = await response.json();
+        const [demandsSummaryRes, constraintsSummaryRes] = await Promise.all([
+            fetch('/api/constraints/impacted-demands/summary'),
+            fetch('/api/constraints/summary')
+        ]);
+        const demandsSummary = await demandsSummaryRes.json();
+        const constraintsSummary = await constraintsSummaryRes.json();
         
-        renderConstraintCards(summaryData);
-        renderImpactedDemandsTable(); 
+        const totalBottlenecks = (constraintsSummary.constrainedResourceCount || 0) + (constraintsSummary.bottleneckSkusCount || 0);
+        
+        cardsContainer.innerHTML = `
+            <div id="ca-card-bottlenecks" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
+                <p class="text-sm font-medium text-gray-500 uppercase">Bottlenecks</p>
+                <p class="text-2xl font-bold text-yellow-500">${totalBottlenecks}</p>
+            </div>
+            <div id="ca-card-impacted-demands" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
+                <p class="text-sm font-medium text-gray-500 uppercase">Impacted Demands</p>
+                <p class="text-2xl font-bold text-orange-500">${demandsSummary.orderCount.toLocaleString()}-${(demandsSummary.totalQty || 0).toLocaleString()}</p>
+            </div>
+            <div id="ca-card-order-search" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-indigo-500 text-white mr-4"><i class="fas fa-search fa-lg"></i></div>
+                    <div>
+                        <p class="text-sm font-medium text-gray-500 uppercase">Order</p>
+                        <p class="text-2xl font-bold text-gray-800">Search</p>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.getElementById('ca-card-impacted-demands').addEventListener('click', renderImpactedDemandsTable);
+        document.getElementById('ca-card-order-search').addEventListener('click', renderOrderSearchUI);
+        document.getElementById('ca-card-bottlenecks').addEventListener('click', renderBottleneckView);
+
     } catch (error) {
         console.error("Error fetching constraints summary:", error);
         cardsContainer.innerHTML = `<p class="text-red-500">Could not load constraint cards.</p>`;
     }
 }
 
-function renderConstraintCards(summaryData) {
-    const totalBottlenecks = (summaryData.constrainedResourceCount || 0) + (summaryData.bottleneckSkusCount || 0);
-    
-    cardsContainer.innerHTML = `
-        <div id="ca-card-bottlenecks" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
-            <p class="text-sm font-medium text-gray-500 uppercase">Bottlenecks</p>
-            <p class="text-2xl font-bold text-yellow-500">${totalBottlenecks}</p>
-        </div>
-        <div id="ca-card-impacted-demands" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
-            <p class="text-sm font-medium text-gray-500 uppercase">Impacted Demands</p>
-            <p class="text-2xl font-bold text-orange-500">${summaryData.impactedDemandsCount.toLocaleString()}-${(summaryData.impactedDemandsQty || 0).toLocaleString()}</p>
-        </div>
-        <div id="ca-card-order-search" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
-            <div class="flex items-center">
-                <div class="p-3 rounded-full bg-indigo-500 text-white mr-4"><i class="fas fa-search fa-lg"></i></div>
-                <div>
-                    <p class="text-sm font-medium text-gray-500 uppercase">Order</p>
-                    <p class="text-2xl font-bold text-gray-800">Search</p>
-                </div>
-            </div>
-        </div>
-    `;
-
-    document.getElementById('ca-card-impacted-demands').addEventListener('click', renderImpactedDemandsTable);
-    document.getElementById('ca-card-order-search').addEventListener('click', renderOrderSearchUI);
-    document.getElementById('ca-card-bottlenecks').addEventListener('click', () => renderBottleneckView(summaryData));
+export function initConstraintAnalysis() {
+    renderConstraintCards();
+    renderImpactedDemandsTable();
 }
