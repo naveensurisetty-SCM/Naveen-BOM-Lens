@@ -5,37 +5,98 @@ from utils.neo4j_handler import get_db
 
 constraints_bp = Blueprint('constraints_bp', __name__)
 
+@constraints_bp.route('/api/constraints/fg-search', methods=['POST'])
+def fg_search():
+    """
+    For a given SKU, gathers all demands, constrained demands, and the constraints themselves.
+    Returns a full "Health Report" for the SKU.
+    """
+    try:
+        req_data = request.json
+        item = req_data.get('item')
+        loc = req_data.get('loc')
+        sku_id = f"{item}@{loc}"
+
+        if not item or not loc:
+            return jsonify({'error': 'Item and Location are required'}), 400
+
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            query = """
+            MATCH (s:SKU {sku_id: $sku_id})
+            CALL(s) {
+                WITH s
+                MATCH (s)<-[:IS_FOR_SKU]-(d:Demand)
+                RETURN collect(d {.*, broken_bom: s.broken_bom}) AS all_demands, 
+                       count(d) AS total_demand_count, 
+                       coalesce(sum(d.qty), 0) AS total_demand_qty
+            }
+            CALL(s) {
+                WITH s
+                MATCH (s)<-[:IS_FOR_SKU]-(d:Demand)<-[:IMPACTS_DEMAND]-(c:Constraint)
+                WITH s, d, collect(properties(c)) as demand_constraints
+                WITH s, collect(d {.*, broken_bom: s.broken_bom, constraints: demand_constraints}) AS constrained_demands, 
+                     count(d) as constrained_demand_count,
+                     coalesce(sum(d.qty), 0) as constrained_demand_qty
+                MATCH (s)<-[:IS_FOR_SKU]-(d:Demand)<-[:IMPACTS_DEMAND]-(c:Constraint)
+                RETURN constrained_demands, constrained_demand_count, constrained_demand_qty, 
+                       collect(DISTINCT properties(c)) as constraints
+            }
+            RETURN s.sku_id as sku, all_demands, total_demand_count, total_demand_qty, 
+                   constrained_demands, constrained_demand_count, constrained_demand_qty, constraints
+            """
+            result = session.run(query, sku_id=sku_id).single()
+
+            if not result:
+                return jsonify({'found': False, 'sku': sku_id})
+
+            total_qty = result['total_demand_qty']
+            constrained_qty = result['constrained_demand_qty']
+            status = "Healthy"
+            if constrained_qty > 0:
+                percentage_constrained = constrained_qty / total_qty if total_qty > 0 else 0
+                if percentage_constrained >= 0.5:
+                    status = "Constrained"
+                else:
+                    status = "At Risk"
+            
+            response_data = dict(result)
+            response_data['status'] = status
+            response_data['found'] = True
+
+            return jsonify(response_data)
+
+    except Exception as e:
+        print(f"An error occurred in fg_search: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+# ## MODIFICATION START ## - This function has been simplified and corrected
 @constraints_bp.route('/api/constraints/resource-time-phase', methods=['GET'])
 def get_resource_time_phase_data():
     """
-    Fetches all ResWeek node data for constrained resources.
-    Can be filtered by a single resource ID passed as a query parameter.
+    Fetches all ResWeek node data for a specific constrained resource.
     """
     try:
         res_id_filter = request.args.get('resId')
+        if not res_id_filter:
+            return jsonify({'error': 'resId query parameter is required'}), 400
+            
         driver = get_db()
         with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
-            if res_id_filter:
-                query = """
-                MATCH (r:Res {res_id: $resId})
-                MATCH (rw:ResWeek {res_id: $resId})
-                RETURN r.res_id AS resId, r.res_descr AS resDescr, collect(properties(rw)) AS weeklyData
-                """
-                result = session.run(query, resId=res_id_filter)
-            else:
-                query = """
-                MATCH (r:Res)-[:HAS_CONSTRAINT]->(:Constraint)
-                WITH DISTINCT r
-                MATCH (rw:ResWeek {res_id: r.res_id})
-                RETURN r.res_id AS resId, r.res_descr AS resDescr, collect(properties(rw)) AS weeklyData
-                """
-                result = session.run(query)
+            query = """
+            MATCH (r:Res {res_id: $resId})
+            MATCH (rw:ResWeek {res_id: $resId})
+            RETURN r.res_id AS resId, r.res_descr AS resDescr, collect(properties(rw)) AS weeklyData
+            """
+            result = session.run(query, resId=res_id_filter)
             
             data = [dict(record) for record in result]
             return jsonify(data)
     except Exception as e:
         print(f"An error occurred in get_resource_time_phase_data: {e}")
         return jsonify({'error': 'Internal server error'}), 500
+# ## MODIFICATION END ##
 
 @constraints_bp.route('/api/constraints/demands-for-resource-week', methods=['POST'])
 def get_demands_for_resource_week():
@@ -153,7 +214,6 @@ def search_order_constraints():
         print(f"An error occurred in search_order_constraints: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
-# ## MODIFICATION START ## - Query now collects demands and sums their quantities for each constraint
 @constraints_bp.route('/api/constraints/constrained-resources', methods=['GET'])
 def get_constrained_resources():
     """Gets resources, their constraints, and the demands impacted by each constraint."""
@@ -181,7 +241,6 @@ def get_constrained_resources():
     except Exception as e:
         print(f"An error occurred in get_constrained_resources: {e}")
         return jsonify({'error': 'Internal server error'}), 500
-# ## MODIFICATION END ##
 
 
 @constraints_bp.route('/api/constraints/bottleneck-skus', methods=['GET'])

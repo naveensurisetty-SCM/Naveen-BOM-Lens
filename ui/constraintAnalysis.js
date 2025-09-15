@@ -33,6 +33,237 @@ function createCaHeader(title, backFunction = null) {
 
 // --- Functions to render drill-down content ---
 
+function renderDemandSearchUI() {
+    resultsContainer.innerHTML = ''; 
+    
+    const searchContainer = document.createElement('div');
+    searchContainer.className = 'px-2';
+    searchContainer.innerHTML = `
+        <div class="bg-white rounded-xl shadow-lg p-4">
+            <div class="flex items-center space-x-2">
+                <input type="text" id="fg-item-input" placeholder="Enter Item..." class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <input type="text" id="fg-loc-input" placeholder="Enter Location..." class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <button id="fg-search-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex-shrink-0">
+                    <i class="fas fa-search"></i>
+                    <span class="ml-2">Search</span>
+                </button>
+            </div>
+        </div>
+        <div id="fg-health-report-container" class="mt-6"></div>
+    `;
+    resultsContainer.appendChild(searchContainer);
+
+    const searchBtn = document.getElementById('fg-search-btn');
+    const itemInput = document.getElementById('fg-item-input');
+    const locInput = document.getElementById('fg-loc-input');
+    
+    const performSearch = () => {
+        const item = itemInput.value.trim();
+        const loc = locInput.value.trim();
+        if (item && loc) {
+            handleFgSearch(item, loc);
+        } else {
+            alert('Please enter both an Item and a Location.');
+        }
+    };
+
+    searchBtn.addEventListener('click', performSearch);
+    itemInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') performSearch(); });
+    locInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') performSearch(); });
+}
+
+async function handleFgSearch(item, loc) {
+    const reportContainer = document.getElementById('fg-health-report-container');
+    const searchBtn = document.getElementById('fg-search-btn');
+    reportContainer.innerHTML = `<div class="flex justify-center items-center p-8"><i class="fas fa-spinner fa-spin fa-2x text-gray-400"></i></div>`;
+    searchBtn.disabled = true;
+
+    try {
+        const response = await fetch('/api/constraints/fg-search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item, loc })
+        });
+        const data = await response.json();
+        renderFgHealthReport(data);
+    } catch (error) {
+        console.error("Error fetching FG health report:", error);
+        reportContainer.innerHTML = `<p class="text-red-500">An error occurred while fetching the report.</p>`;
+    } finally {
+        searchBtn.disabled = false;
+    }
+}
+
+function getStatusBadge(status) {
+    const styles = {
+        'Healthy': 'bg-green-100 text-green-800',
+        'At Risk': 'bg-yellow-100 text-yellow-800',
+        'Constrained': 'bg-red-100 text-red-800'
+    };
+    const icons = {
+        'Healthy': 'fa-check-circle',
+        'At Risk': 'fa-exclamation-triangle',
+        'Constrained': 'fa-exclamation-circle'
+    };
+    return `<span class="ml-4 px-3 py-1 text-sm font-medium rounded-full ${styles[status]}"><i class="fas ${icons[status]} mr-1"></i> ${status}</span>`;
+}
+
+function renderFgHealthReport(data) {
+    const reportContainer = document.getElementById('fg-health-report-container');
+    reportContainer.innerHTML = '';
+
+    if (!data.found) {
+        reportContainer.innerHTML = `<p class="text-red-500 p-4">SKU '${data.sku}' not found.</p>`;
+        return;
+    }
+
+    const header = document.createElement('div');
+    header.className = 'flex items-center mb-4 px-2';
+    header.innerHTML = `
+        <h3 class="text-xl font-bold text-gray-800">${data.sku}</h3>
+        ${getStatusBadge(data.status)}
+    `;
+    reportContainer.appendChild(header);
+    
+    const tableContainer = document.createElement('div');
+    tableContainer.className = 'px-2';
+    reportContainer.appendChild(tableContainer);
+
+    const tableData = [{
+        id: 1,
+        sku: data.sku,
+        totalDemands: data.all_demands,
+        totalDemandsSummary: `${data.total_demand_count} - ${Math.round(data.total_demand_qty).toLocaleString()}`,
+        constrainedDemands: data.constrained_demands,
+        constrainedDemandsSummary: `${data.constrained_demand_count} - ${Math.round(data.constrained_demand_qty).toLocaleString()}`,
+        constraints: data.constraints,
+        constraintsSummary: data.constraints.length
+    }];
+    
+    // ## MODIFICATION START ## - Arrow icon is now placed before the summary text
+    const expanderFormatter = (cell, formatterParams) => {
+        const details = cell.getValue() || [];
+        const summaryText = cell.getRow().getData()[formatterParams.summaryField];
+        if (details.length === 0) return summaryText; 
+        
+        return `<span class="expand-handle cursor-pointer text-indigo-600 hover:text-indigo-800" data-target="${formatterParams.targetId}"><i class="fas fa-caret-right fa-fw mr-2"></i>${summaryText}</span>`;
+    };
+    // ## MODIFICATION END ##
+
+    new Tabulator(tableContainer, {
+        data: tableData,
+        layout: "fitDataStretch",
+        rowFormatter: (row) => {
+            const rowElement = row.getElement();
+            const detailElement = document.createElement("div"); 
+            detailElement.classList.add("hidden", "p-0", "bg-gray-50", "border-t");
+            rowElement.appendChild(detailElement);
+            
+            rowElement.addEventListener('click', (e) => {
+                const handle = e.target.closest('.expand-handle');
+                if (!handle) return;
+                
+                e.stopPropagation();
+                const targetId = handle.dataset.target;
+                const data = row.getData();
+                let isOpening = !detailElement.classList.contains("hidden") && detailElement.dataset.activeTarget === targetId;
+
+                rowElement.querySelectorAll('.expand-handle i').forEach(icon => {
+                    icon.classList.remove('fa-caret-down');
+                    icon.classList.add('fa-caret-right');
+                });
+                
+                if (isOpening) {
+                    detailElement.classList.add("hidden");
+                    detailElement.innerHTML = '';
+                } else {
+                    detailElement.classList.remove("hidden");
+                    detailElement.dataset.activeTarget = targetId;
+                    handle.querySelector("i").classList.remove("fa-caret-right");
+                    handle.querySelector("i").classList.add("fa-caret-down");
+                    
+                    detailElement.innerHTML = ''; 
+                    
+                    if (targetId === 'total' || targetId === 'constrained') {
+                        const demandData = data[targetId === 'total' ? 'totalDemands' : 'constrainedDemands'];
+                        
+                        let columns = [
+                            { title: "Order ID", field: "orderId" }, { title: "Seq Num", field: "seqnum" },
+                            { title: "Qty", field: "qty", hozAlign: "right" }, { title: "Date", field: "date" }, { title: "Type", field: "type" }
+                        ];
+
+                        if (targetId === 'constrained') {
+                            columns.unshift({
+                                title: "Constraints",
+                                field: "constraints",
+                                hozAlign: "center",
+                                width: 150,
+                                formatter: (cell) => {
+                                    const constraints = cell.getValue() || [];
+                                    if (constraints.length === 0) return "0";
+                                    return `<span class="expand-constraints cursor-pointer text-indigo-600 hover:text-indigo-800"><i class="fas fa-caret-right fa-fw"></i> ${constraints.length}</span>`;
+                                }
+                            });
+                        }
+                        
+                        const nestedTable = new Tabulator(detailElement, {
+                            data: demandData,
+                            layout: "fitData",
+                            cssClass: "tabulator-creative",
+                            rowFormatter: (subRow) => {
+                                const subRowData = subRow.getData();
+                                const subRowElement = subRow.getElement();
+                                if(subRowData.constraints && subRowData.constraints.length > 0) {
+                                    const subDetailElement = document.createElement('div');
+                                    subDetailElement.classList.add("hidden", "p-4", "bg-gray-100", "border-t", "text-left");
+                                    
+                                    let html = '<ul class="space-y-2 list-disc list-inside">';
+                                    subRowData.constraints.forEach(c => {
+                                        const utilPercent = (c.utilization * 100).toFixed(0);
+                                        html += `<li class="text-sm text-gray-700">Constraint on <strong>${c.resourceId}</strong> in <strong>Week ${c.week}</strong> at <strong class="text-red-600">${utilPercent}%</strong> utilization.</li>`;
+                                    });
+                                    html += '</ul>';
+                                    subDetailElement.innerHTML = html;
+                                    subRowElement.appendChild(subDetailElement);
+
+                                    const subCellEl = subRow.getCell("constraints");
+                                    if(subCellEl) {
+                                        const subHandle = subCellEl.getElement().querySelector('.expand-constraints');
+                                        if (subHandle) {
+                                            subHandle.addEventListener('click', (evt) => {
+                                                evt.stopPropagation();
+                                                subDetailElement.classList.toggle('hidden');
+                                                subHandle.querySelector("i").classList.toggle("fa-caret-right");
+                                                subHandle.querySelector("i").classList.toggle("fa-caret-down");
+                                            });
+                                        }
+                                    }
+                                }
+                            },
+                            columns: columns
+                        });
+                    } else if (targetId === 'constraints') {
+                        let html = '<ul class="space-y-2 list-disc list-inside p-4 text-left">';
+                        data.constraints.forEach(c => {
+                            const utilPercent = (c.utilization * 100).toFixed(0);
+                            html += `<li class="text-sm text-gray-700">Constraint on <strong>${c.resourceId}</strong> in <strong>Week ${c.week}</strong> at <strong class="text-red-600">${utilPercent}%</strong> utilization.</li>`;
+                        });
+                        html += '</ul>';
+                        detailElement.innerHTML = html;
+                    }
+                }
+            });
+        },
+        columns: [
+            { title: "SKU", field: "sku", width: 250, cssClass: "font-bold", hozAlign: "left" },
+            { title: "Total Demand", field: "totalDemands", hozAlign: "left", formatter: expanderFormatter, formatterParams: { summaryField: 'totalDemandsSummary', targetId: 'total' } },
+            { title: "Constrained Demand", field: "constrainedDemands", hozAlign: "left", formatter: expanderFormatter, formatterParams: { summaryField: 'constrainedDemandsSummary', targetId: 'constrained' } },
+            { title: "Constraints", field: "constraints", hozAlign: "left", formatter: expanderFormatter, formatterParams: { summaryField: 'constraintsSummary', targetId: 'constraints' } }
+        ]
+    });
+}
+
+
 function renderOrderSearchUI() {
     resultsContainer.innerHTML = ''; 
     resultsContainer.appendChild(createCaHeader("Order Search"));
@@ -218,44 +449,6 @@ function renderBottleneckView(summaryData) {
     document.getElementById('ca-bottleneck-skus-card-drilldown').addEventListener('click', renderBottleneckSkusTable);
 }
 
-
-function showDemandsModal(demands, resourceId, week) {
-    const modal = document.getElementById('demands-modal');
-    const titleEl = document.getElementById('demands-modal-title');
-    const contentEl = document.getElementById('demands-modal-content');
-    const closeBtn = modal.querySelector('.close-demands-modal');
-
-    titleEl.textContent = `Demands contributing to load for ${resourceId} in Week ${week}`;
-    contentEl.innerHTML = '';
-
-    if (!demands || demands.length === 0) {
-        contentEl.innerHTML = '<p class="text-gray-500">No specific demands found for this period.</p>';
-    } else {
-        new Tabulator(contentEl, {
-            data: demands,
-            layout: "fitDataStretch",
-            maxHeight: "80%",
-            columns: [
-                { title: "Order/Seq", field: "demand.orderId", formatter: (cell) => cell.getValue() || cell.getRow().getData().demand.seqnum },
-                { title: "SKU", field: "demand.sku_id", widthGrow: 2 },
-                { title: "Type", field: "demand.type" },
-                { title: "Load Qty", field: "loadQty", hozAlign: "right" },
-            ]
-        });
-    }
-
-    modal.classList.remove('hidden');
-    
-    const closeModal = () => modal.classList.add('hidden');
-    closeBtn.onclick = closeModal;
-    modal.onclick = (event) => {
-        if (event.target === modal) {
-            closeModal();
-        }
-    };
-}
-
-
 async function renderResourceTimePhase(resourceId = null) {
     resultsContainer.innerHTML = '';
     const headerTitle = resourceId ? `Time-Phase for ${resourceId}` : "Resource Time-Phased Utilization";
@@ -362,7 +555,6 @@ async function renderResourceTimePhase(resourceId = null) {
     }
 }
 
-
 async function renderConstrainedResourcesList(summaryData) {
     resultsContainer.innerHTML = '';
     const header = createCaHeader("Constrained Resources", () => renderBottleneckView(summaryData));
@@ -391,12 +583,10 @@ async function renderConstrainedResourcesList(summaryData) {
             data: data,
             maxHeight: "70vh", 
             layout: "fitDataStretch",
-            // ## MODIFICATION START ## - Logic updated to handle two expandable columns
             rowFormatter: function(row) {
                 const data = row.getData();
                 const rowElement = row.getElement();
 
-                // Create and append container for constraint details
                 if (data.constraintDetails && data.constraintDetails.length > 0) {
                     const detailElement = document.createElement("div");
                     detailElement.id = `constraints-detail-${data.properties.res_id}`;
@@ -412,7 +602,6 @@ async function renderConstrainedResourcesList(summaryData) {
                     rowElement.appendChild(detailElement);
                 }
 
-                // Create and append container for demand details
                 const totalDemands = data.constraintDetails.reduce((acc, cv) => acc + cv.demands.length, 0);
                 if (totalDemands > 0) {
                     const demandsDetailElement = document.createElement("div");
@@ -421,7 +610,6 @@ async function renderConstrainedResourcesList(summaryData) {
                     rowElement.appendChild(demandsDetailElement);
                 }
 
-                // Attach event listener for the CONSTRAINTS arrow
                 const constraintsCell = row.getCell("constraints");
                 if (constraintsCell) {
                     const handle = constraintsCell.getElement().querySelector(".expand-constraints");
@@ -435,7 +623,6 @@ async function renderConstrainedResourcesList(summaryData) {
                     }
                 }
                 
-                // Attach event listener for the DEMANDS arrow
                 const demandsCell = row.getCell("demands");
                 if (demandsCell) {
                     const handle = demandsCell.getElement().querySelector(".expand-demands");
@@ -447,12 +634,10 @@ async function renderConstrainedResourcesList(summaryData) {
                             handle.querySelector("i").classList.toggle("fa-caret-right");
                             handle.querySelector("i").classList.toggle("fa-caret-down");
 
-                            // If we are showing it for the first time, build the inner table
                             if (!demandsContainer.classList.contains("hidden") && !demandsContainer.hasChildNodes()) {
                                 let allDemands = [];
                                 data.constraintDetails.forEach(cd => {
                                     cd.demands.forEach(demand => {
-                                        // Add constraint date to each demand for the new column
                                         allDemands.push({ ...demand, constraintDate: `Week ${cd.constraint.week}` });
                                     });
                                 });
@@ -477,7 +662,7 @@ async function renderConstrainedResourcesList(summaryData) {
             columns: [
                 { 
                     title: "Constraints", 
-                    field: "constraints", // Unique field name
+                    field: "constraints",
                     hozAlign: "center", 
                     width: 150,
                     headerSort: false,
@@ -490,7 +675,7 @@ async function renderConstrainedResourcesList(summaryData) {
                 },
                 { 
                     title: "Impacted Demands", 
-                    field: "demands", // Unique field name
+                    field: "demands",
                     hozAlign: "center", 
                     width: 200,
                     headerSort: false,
@@ -505,7 +690,7 @@ async function renderConstrainedResourcesList(summaryData) {
                 { 
                     title: "Resource ID", 
                     field: "properties.res_id",
-                    widthGrow: 2,
+                    widthGrow: 2.5,
                     formatter: (cell) => {
                         const resId = cell.getValue();
                         const buttons = `
@@ -520,7 +705,6 @@ async function renderConstrainedResourcesList(summaryData) {
                     }
                 },
             ],
-            // ## MODIFICATION END ##
         });
         
         table.on("cellClick", function(e, cell){
@@ -646,17 +830,17 @@ function renderConstraintCards(summaryData) {
             <p class="text-2xl font-bold text-orange-500">${summaryData.impactedDemandsCount.toLocaleString()}-${(summaryData.impactedDemandsQty || 0).toLocaleString()}</p>
         </div>
         <div id="ca-card-order-search" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
-            <div class="flex items-center">
-                <div class="p-3 rounded-full bg-indigo-500 text-white mr-4"><i class="fas fa-search fa-lg"></i></div>
-                <div>
-                    <p class="text-sm font-medium text-gray-500 uppercase">Order</p>
-                    <p class="text-2xl font-bold text-gray-800">Search</p>
-                </div>
-            </div>
+            <p class="text-sm font-medium text-gray-500 uppercase">Order Search</p>
+            <p class="text-2xl font-bold text-gray-800">Analyze</p>
+        </div>
+        <div id="ca-card-demand-search" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
+            <p class="text-sm font-medium text-gray-500 uppercase">Demand Search</p>
+            <p class="text-2xl font-bold text-gray-800">Analyze</p>
         </div>
     `;
 
     document.getElementById('ca-card-impacted-demands').addEventListener('click', renderImpactedDemandsTable);
     document.getElementById('ca-card-order-search').addEventListener('click', renderOrderSearchUI);
     document.getElementById('ca-card-bottlenecks').addEventListener('click', () => renderBottleneckView(summaryData));
+    document.getElementById('ca-card-demand-search').addEventListener('click', renderDemandSearchUI);
 }

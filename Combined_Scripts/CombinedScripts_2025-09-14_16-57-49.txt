@@ -1,0 +1,3435 @@
+--- START OF FILE: ../app.py ---
+from flask import Flask, send_from_directory
+from flask_cors import CORS
+from dotenv import load_dotenv
+
+# Load environment variables from .env file first
+load_dotenv()
+
+# Import blueprints from their new files
+from routes.news import news_bp
+from routes.dashboard import dashboard_bp
+from routes.bom_viewer import bom_viewer_bp
+from routes.chat import chat_bp
+# ## MODIFICATION START ##
+from routes.constraints import constraints_bp
+# ## MODIFICATION END ##
+
+app = Flask(__name__)
+CORS(app)
+
+# Register each blueprint with the main app
+app.register_blueprint(news_bp)
+app.register_blueprint(dashboard_bp)
+app.register_blueprint(bom_viewer_bp)
+app.register_blueprint(chat_bp)
+# ## MODIFICATION START ##
+app.register_blueprint(constraints_bp)
+# ## MODIFICATION END ##
+
+# --- Static File Serving ---
+@app.route('/')
+def serve_index():
+    """Serves the index.html file for the root URL."""
+    return send_from_directory('.', 'index.html')
+
+@app.route('/<path:path>')
+def serve_static_files(path):
+    """Serves static files like JS, CSS, and images."""
+    return send_from_directory('.', path)
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5000)
+
+--- END OF FILE: ../app.py ---
+
+
+--- START OF FILE: ../index.html ---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supply Chain Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="images/ElevaAI_short_logo.svg">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="text/javascript" src="https://unpkg.com/vis-network@latest/dist/vis-network.min.js"></script>
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    
+    <link href="https://unpkg.com/tabulator-tables@5.6.1/dist/css/tabulator.min.css" rel="stylesheet">
+    <link href="https://unpkg.com/tabulator-tables@5.6.1/dist/css/tabulator_tailwind.min.css" rel="stylesheet">
+    <script type="text/javascript" src="https://unpkg.com/tabulator-tables@5.6.1/dist/js/tabulator.min.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; overflow-x: hidden; }
+        .modal { display: none; }
+        .modal:not(.hidden) { display: flex; }
+        #network-container { width: 100%; height: 600px; border: 1px solid #d1d5db; background-color: #f9fafb; border-radius: 0.75rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
+        #node-properties-content table { width: 100%; border-collapse: collapse; }
+        #node-properties-content td { text-align: left; padding: 8px; border-bottom: 1px solid #e5e7eb; }
+        #sidebar { width: 48px; transition: width 0.3s ease-in-out; overflow-x: hidden; padding: 7px 6px 6px 6px; }
+        #sidebar.expanded { width: 256px; }
+        #sidebar-content { white-space: nowrap; }
+        #main-content { margin-left: 48px; transition: margin-left 0.3s ease-in-out; height: 100vh; }
+        #main-content.expanded { margin-left: 256px; }
+        #sidebar #logo-full { display: none; }
+        #sidebar #logo-short { display: block; }
+        #sidebar.expanded #logo-full { display: block; }
+        #sidebar.expanded #logo-short { display: none; }
+        #logo-container { display: flex; align-items: center; justify-content: center; }
+        #sidebar.expanded #logo-container { justify-content: flex-start; }
+        #sidebar:not(.expanded) .option-text { display: none; }
+        #sidebar:not(.expanded) ul li { justify-content: center; }
+        .user-message { background-color: #3b82f6; color: white; align-self: flex-end; }
+        .assistant-message { background-color: #e5e7eb; color: #1f2937; align-self: flex-start; }
+        #chat-section.is-new-chat { justify-content: center; }
+        #chat-section.is-new-chat > .flex-1 { flex-grow: 0; margin-bottom: 1rem; overflow-y: visible; }
+        .eleva-loader { --size:48px; --speed:1s; position:relative; width:var(--size); height:var(--size); display:grid; place-items:center; }
+        .eleva-icon{ width:22px; height:22px; z-index:1; }
+        .eleva-ring{ position:absolute; inset:0; transform-origin:center; animation: spin var(--speed) linear infinite; }
+        .path{ stroke-linecap:round; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        #main-cards-container.hidden { display: none; }
+        #ca-cards-container.hidden { display: none; }
+        #news-matrix-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        #news-matrix-table th, #news-matrix-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #e5e7eb; word-wrap: break-word; }
+        #news-matrix-table th { font-size: 12px; font-weight: 600; text-transform: uppercase; color: #4b5563; background-color: #f9fafb; cursor: pointer; }
+        .article-column { width: 35%; }
+        .category-column { width: 15%; }
+        .kpi-column { width: 10%; text-align: center; }
+        #news-matrix-table td { font-size: 14px; }
+        .article-title-cell a { font-weight: 600; color: #1f2937; text-decoration: none; }
+        .article-title-cell a:hover { color: #3b82f6; }
+        .article-source-cell { font-size: 12px; color: #6b7280; }
+        .kpi-cell { text-align: center; }
+        .kpi-loader-small { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(0,0,0,.1); border-radius: 50%; border-top-color: #4f46e5; animation: kpi-spin 1s ease-in-out infinite; }
+        @keyframes kpi-spin { to { transform: rotate(360deg); } }
+        .indicator-positive { color: #16a34a; }
+        .indicator-negative { color: #dc2626; }
+        .indicator-neutral { color: #4b5563; font-weight: 800; font-size: 1.25rem; line-height: 1; }
+        .quarter-filter-btn { background-color: #e5e7eb; color: #374151; transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out; flex-shrink: 0; }
+        .quarter-filter-btn:hover { background-color: #d1d5db; }
+        .quarter-filter-btn.active { background-color: #4f46e5; color: #ffffff; }
+        #quarter-filter-bar { position: relative; background-color: #fff; border-radius: 0.375rem; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); transition: max-height 0.5s ease-in-out; overflow: hidden; cursor: pointer; max-height: 40px; }
+        #quarter-filter-bar.expanded { max-height: 200px; cursor: default; }
+        #quarter-filter-container { padding: 4px; display: flex; flex-wrap: wrap; gap: 8px; }
+        #quarter-filter-bar.collapsed #quarter-filter-container > *:not(.active-display) { display: none; }
+        .active-display { display: flex; align-items: center; width: 100%; height: 32px; padding: 0 8px; }
+        .active-display .year-label { margin-left: 0; }
+        #quarter-filter-bar.expanded .active-display { display: none; }
+        .tabulator.tabulator-creative { border: none; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.07); border-radius: 12px; overflow: hidden; }
+        .tabulator.tabulator-creative .tabulator-header { background-color: #4f46e5; color: #ffffff; font-weight: 600; border-bottom: none; }
+        .tabulator.tabulator-creative .tabulator-col { background-color: #4f46e5; }
+        .tabulator.tabulator-creative .tabulator-col-content { padding: 16px 20px; }
+        .tabulator.tabulator-creative .tabulator-row { background-color: #ffffff; border-bottom: 1px solid #e5e7eb; transition: transform 0.2s ease, box-shadow 0.2s ease; }
+        .tabulator.tabulator-creative .tabulator-row:last-of-type { border-bottom: none; }
+        .tabulator.tabulator-creative .tabulator-row.tabulator-row-hover { box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05), inset 4px 0 0 0 #4f46e5; transform: scale(1.01); position: relative; z-index: 10; }
+        .tabulator.tabulator-creative .tabulator-cell { padding: 16px 20px; border-right: none; }
+        .tabulator-creative .tabulator-header .tabulator-col .tabulator-col-content .tabulator-header-menu-button { display: none !important; }
+        .column-manager-popup { position: absolute; z-index: 1000; background-color: white; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); padding: 1rem; width: 280px; }
+        .column-manager-popup h4 { font-weight: 600; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid #e5e7eb; }
+        .column-manager-popup ul { list-style: none; padding: 0; margin: 0; max-height: 300px; overflow-y: auto; }
+        .column-manager-popup li { display: flex; align-items: center; padding: 8px; cursor: grab; user-select: none; background-color: #f9fafb; border: 1px solid #e5e7eb; margin-bottom: 4px; border-radius: 4px; }
+        .column-manager-popup li.dragging { opacity: 0.5; background-color: #dbeafe; }
+        .column-manager-popup li input { margin-right: 10px; }
+        .assistant-message > *:first-child { margin-top: 0; }
+        .assistant-message > *:last-child { margin-bottom: 0; }
+        .assistant-message p { margin-bottom: 0.5rem; }
+        .assistant-message ul { list-style: disc; padding-left: 1.5rem; margin-bottom: 0.5rem; }
+        .assistant-message ol { list-style: decimal; padding-left: 1.5rem; margin-bottom: 0.5rem; }
+        .assistant-message table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; display: block; overflow-x: auto; white-space: nowrap; }
+        .assistant-message th, .assistant-message td { border: 1px solid #d1d5db; padding: 8px 12px; text-align: left; }
+        .assistant-message th { background-color: #f3f4f6; font-weight: 600; }
+        .assistant-message code { background-color: #d1d5db; padding: 2px 4px; border-radius: 4px; font-family: monospace; }
+        .tab-button.active { border-bottom-color: #4f46e5; color: #4f46e5; font-weight: 600; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        .tabulator-creative.time-phase-table .tabulator-cell {
+            padding-top: 8px;
+            padding-bottom: 8px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <div id="sidebar" class="fixed top-0 left-0 h-full bg-gray-200 text-gray-800 z-20">
+        <div id="logo-container" class="mb-4">
+            <img id="logo-full" src="images/ElevaAI_full_logo.svg" alt="Eleva AI Full Logo" class="w-28 cursor-pointer">
+            <img id="logo-short" src="images/ElevaAI_short_logo.svg" alt="Eleva AI Short Logo" class="w-7 cursor-pointer">
+        </div>
+        <div id="sidebar-content">
+            <ul>
+                <li id="dashboard-option" class="flex items-center p-2 hover:bg-gray-300 rounded cursor-pointer"><img src="images/Dashboard.png" alt="Dashboard Icon" class="h-4 w-4 flex-shrink-0"><span class="option-text text-xs ml-3">Dashboard</span></li>
+                <li id="bom-viewer-option" class="flex items-center p-2 hover:bg-gray-300 rounded cursor-pointer"><img src="images/BOM_Viewer.png" alt="BOM Viewer Icon" class="h-4 w-4 flex-shrink-0"><span class="option-text text-xs ml-3">BOM Viewer</span></li>
+                <li id="constraint-analysis-option" class="flex items-center p-2 hover:bg-gray-300 rounded cursor-pointer"><img src="images/Constraints.png" alt="Constraints Icon" class="h-4 w-4 flex-shrink-0"><span class="option-text text-xs ml-3">Constraints</span></li>
+                <li id="new-chat-option" class="flex items-center p-2 hover:bg-gray-300 rounded cursor-pointer"><img src="images/New_Chat.png" alt="New Chat Icon" class="h-4 w-4 flex-shrink-0"><span class="option-text text-xs ml-3">New Chat</span></li>
+            </ul>
+            <h4 class="px-2 mt-4 mb-2 font-semibold text-xs text-gray-500 tracking-wider option-text">Chats</h4>
+            <div id="chat-history-list" class="flex-1 overflow-y-auto"></div>
+        </div>
+    </div>
+
+    <main id="main-content" class="p-1">
+        <div id="dashboard-section" class="px-2 py-1">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-gray-800 mr-auto">Dashboard Overview</h2>
+                <div id="quarter-filter-bar" class="collapsed">
+                    <div id="quarter-filter-container"></div>
+                </div>
+                <button id="toggle-cards-btn" class="p-2 rounded-full hover:bg-gray-200 transition-colors ml-4" title="Toggle Overview Cards"></button>
+            </div>
+            
+            <div id="main-cards-container">
+                <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+                    <div class="bg-white rounded-xl shadow-lg p-4 hover:shadow-2xl transition-shadow duration-300"><h3 class="text-sm font-medium text-gray-500 uppercase">Total Demand at Risk</h3><p id="total-demand-at-risk" class="mt-1 text-2xl font-bold text-red-600">$0</p></div>
+                    <div id="affected-orders-card" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
+                        <h3 class="text-sm font-medium text-gray-500 uppercase">Affected Orders</h3>
+                        <p id="affected-orders" class="mt-1 text-2xl font-bold text-red-600">0</p>
+                    </div>
+                    <div id="broken-networks-card" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300"><h3 class="text-sm font-medium text-gray-500 uppercase">Broken Networks</h3><p id="broken-networks" class="mt-1 text-2xl font-bold text-orange-500">0</p></div>
+                </section>
+            </div>
+
+            <div id="dashboard-content-area">
+                <section id="news-matrix-section" class="bg-white rounded-xl shadow-lg overflow-x-auto">
+                </section>
+                
+                <div id="affected-orders-section" class="hidden">
+                    <div class="max-w-2xl">
+                        <section class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                            <div id="cust-orders-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
+                                <div class="flex items-baseline justify-between">
+                                    <h4 class="text-base font-bold text-red-800">Customer Orders</h4>
+                                    <span id="cust-orders-count" class="text-lg font-bold text-red-800">0 - 0</span>
+                                </div>
+                            </div>
+                            <div id="fcst-orders-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
+                                <div class="flex items-baseline justify-between">
+                                    <h4 class="text-base font-bold text-orange-800">Forecast Orders</h4>
+                                    <span id="fcst-orders-count" class="text-lg font-bold text-orange-800">0 - 0</span>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+
+                <div id="broken-networks-section" class="hidden"><div class="max-w-2xl"><section class="grid grid-cols-1 sm:grid-cols-2 gap-6"><div id="broken-sku-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300"><div class="flex items-baseline justify-between"><h4 class="text-base font-bold text-blue-800">Broken SKU</h4><span id="broken-skus-count" class="text-lg font-bold text-blue-800">0</span></div></div><div id="broken-demand-network-card" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300"><div class="flex items-baseline justify-between"><h4 class="text-base font-bold text-red-800">Broken FG</h4><span id="broken-fg-networks-count" class="text-lg font-bold text-red-800">0</span></div></div></section></div></div>
+                <div id="results-container" class="hidden"></div>
+            </div>
+        </div>
+        
+        <div id="bom-viewer-wrapper" class="hidden w-full mx-auto flex flex-col px-2 py-1">
+            <div class="w-full flex justify-center">
+                 <div id="sku-input-section"><div class="grid grid-cols-1 md:grid-cols-1 gap-6"><div class="bg-white rounded-xl shadow-lg p-4"><div class="flex items-center space-x-2"><input type="text" id="item-input" placeholder="Enter Item" class="w-60 px-3 py-1 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"><input type="text" id="loc-input" placeholder="Enter Location" class="w-60 px-3 py-1 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"><button id="get-sku-details-btn" class="px-2 py-1 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex-shrink-0"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" /></svg></button><button id="get-network-btn" disabled class="px-4 py-1 bg-gray-300 text-gray-800 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 flex-shrink-0 whitespace-nowrap">Show Network</button></div></div></div></div>
+            </div>
+            <div id="sku-properties-display" class="hidden bg-white rounded-xl shadow-lg p-4 mt-4 w-full"></div>
+        </div>
+
+        <div id="chat-section" class="hidden h-full flex-grow flex flex-col relative">
+            <div class="flex-1 flex flex-col overflow-y-auto"><div id="chat-welcome" class="flex flex-col justify-center items-center"><img src="images/ElevaAI_short_logo.svg" class="w-16 h-16 mb-4" alt="Eleva AI Logo"><p class="text-2xl font-medium text-gray-600">How can I help today?</p></div><div id="chat-log" class="hidden p-8 flex flex-col space-y-4"></div></div>
+            <div id="chat-input-container" class="p-4 w-full transition-all duration-500 ease-in-out"><div class="flex items-center space-x-2 max-w-4xl mx-auto w-full"><input type="text" id="chat-input" placeholder="Ask about your supply chain..." class="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500"><button id="chat-send-btn" class="bg-blue-600 text-white rounded-full p-2 hover:bg-blue-700 transition-colors"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg></button></div></div>
+        </div>
+        
+        <div id="constraint-analysis-section" class="hidden py-1">
+            <div class="flex justify-between items-center mb-4 px-2">
+                <h2 class="text-2xl font-bold text-gray-800 mr-auto">Constraints</h2>
+                <button id="ca-toggle-cards-btn" class="p-2 rounded-full hover:bg-gray-200 transition-colors ml-4" title="Toggle Constraint Cards"></button>
+            </div>
+            
+            <div id="ca-cards-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 px-2">
+            </div>
+            <div id="ca-results-container" class="mt-6">
+            </div>
+        </div>
+            
+        <div id="node-properties-modal" class="modal hidden fixed inset-0 bg-gray-900 bg-opacity-50 items-center justify-center z-50">
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4">
+                <div class="flex justify-between items-center p-4 border-b">
+                    <h3 id="node-properties-title" class="font-semibold text-gray-800">Properties</h3>
+                    <button class="close-properties-modal text-gray-500 hover:text-gray-800"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
+                </div>
+                <div id="node-properties-content" class="p-4 max-h-96 overflow-y-auto"></div>
+            </div>
+        </div>
+
+        <div id="demands-modal" class="modal hidden fixed inset-0 bg-gray-900 bg-opacity-50 items-center justify-center z-50">
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl mx-4">
+                <div class="flex justify-between items-center p-4 border-b">
+                    <h3 id="demands-modal-title" class="font-semibold text-gray-800">Demands</h3>
+                    <button class="close-demands-modal text-gray-500 hover:text-gray-800"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
+                </div>
+                <div id="demands-modal-content" class="p-4 max-h-96 overflow-y-auto"></div>
+            </div>
+        </div>
+    </main>
+    <script type="module" src="main.js"></script>
+</body>
+</html>
+
+--- END OF FILE: ../index.html ---
+
+
+--- START OF FILE: ../main.js ---
+import { initSidebar } from './ui/sidebar.js';
+import { initDashboard, fetchDashboardData } from './ui/dashboard.js';
+import { initNews } from './ui/news.js';
+import { initBomViewer } from './ui/bomViewer.js';
+import { initChat, startNewChat } from './ui/chat.js';
+// ## MODIFICATION START ##
+import { initConstraintAnalysis } from './ui/constraintAnalysis.js';
+// ## MODIFICATION END ##
+
+document.addEventListener('DOMContentLoaded', () => {
+
+    // --- View Management ---
+    const dashboardSection = document.getElementById('dashboard-section');
+    const bomViewerWrapper = document.getElementById('bom-viewer-wrapper');
+    const chatSection = document.getElementById('chat-section');
+    // ## MODIFICATION START ##
+    const constraintAnalysisSection = document.getElementById('constraint-analysis-section');
+    // ## MODIFICATION END ##
+    
+    const contentPanels = [
+        document.getElementById('news-matrix-section'), 
+        document.getElementById('broken-networks-section'), 
+        document.getElementById('bottlenecks-subcards-section'), 
+        document.getElementById('results-container'), 
+        document.getElementById('affected-orders-section')
+    ];
+
+    function showDashboardContent(elementToShow) {
+        contentPanels.forEach(panel => { if (panel) panel.classList.add('hidden'); });
+        if (elementToShow) { elementToShow.classList.remove('hidden'); }
+    }
+
+    // ## MODIFICATION START ##
+    function hideAllViews() {
+        dashboardSection.classList.add('hidden');
+        bomViewerWrapper.classList.add('hidden');
+        chatSection.classList.add('hidden');
+        constraintAnalysisSection.classList.add('hidden');
+    }
+    // ## MODIFICATION END ##
+    
+    function showDashboard() {
+        hideAllViews();
+        dashboardSection.classList.remove('hidden');
+        showDashboardContent(document.getElementById('news-matrix-section'));
+    }
+    
+    function showBomViewer() {
+        hideAllViews();
+        bomViewerWrapper.classList.remove('hidden');
+        document.getElementById('sku-properties-display').classList.add('hidden');
+        const oldGraph = document.getElementById('bom-viewer-graph');
+        if (oldGraph) oldGraph.remove();
+    }
+    
+    function showChatView() {
+        hideAllViews();
+        chatSection.classList.remove('hidden');
+    }
+
+    // ## MODIFICATION START ##
+    function showConstraintAnalysis() {
+        hideAllViews();
+        constraintAnalysisSection.classList.remove('hidden');
+    }
+    // ## MODIFICATION END ##
+
+    // --- Initializations from Modules ---
+    initSidebar();
+    initDashboard(showDashboardContent, fetchDashboardData);
+    initNews();
+    initBomViewer(showDashboardContent);
+    initChat(showChatView, startNewChat, () => renderChatHistory(showChatView));
+    // ## MODIFICATION START ##
+    initConstraintAnalysis();
+    // ## MODIFICATION END ##
+
+
+    // --- Main Navigation ---
+    document.getElementById('dashboard-option').addEventListener('click', showDashboard);
+    document.getElementById('bom-viewer-option').addEventListener('click', showBomViewer);
+    document.getElementById('new-chat-option').addEventListener('click', () => {
+        showChatView();
+        startNewChat();
+    });
+    // ## MODIFICATION START ##
+    document.getElementById('constraint-analysis-option').addEventListener('click', showConstraintAnalysis);
+    // ## MODIFICATION END ##
+
+    // --- Initial View ---
+    showDashboard();
+    fetchDashboardData(); // Make the initial call to load card data
+});
+
+--- END OF FILE: ../main.js ---
+
+
+--- START OF FILE: ../config.js ---
+// config.js
+
+/**
+ * Configuration for the planning horizon.
+ * This object contains the anchor date for planning and the number of 
+ * forward-looking quarters to display in the UI.
+ */
+export const planConfig = {
+  // The anchor date for the plan run. The UI will calculate the quarters starting from this date.
+  // Format: YYYY-MM-DD
+  planStartDate: '2025-09-05',
+
+  // The number of forward quarters to generate and display in the filter bar.
+  numberOfQuarters: 8
+};
+
+--- END OF FILE: ../config.js ---
+
+
+--- START OF FILE: ../shape-library.js ---
+// shape-library.js
+
+const SPEC = {
+  "colors": {
+    "SKU_DEMAND": "#26dd4b",
+    "SKU_COMPONENT": "#4db7e4",
+    "BOM": "#9b9ea1",
+    "RESOURCE": "#45f2de",
+    "PURCH": "#5e548e",
+    "BROKEN": "#e63946",
+    "BOTTLENECK": "#fca30d"
+  },
+  "globalBevel": {
+    "angle": 41,
+    "depth": 5.7,
+    "blur": 1.5,
+    "highlight": 0,
+    "shadow": 0.17
+  },
+  "icons": {
+    "SKU": "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z M3.27 6.96 12 12.01l8.73-5.05 M12 22.08V12",
+    "RESOURCE": "M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8z",
+    "PURCH": "M1 3h15v13H1z M16 8h4l3 3v5h-7V8z M5.5 18.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z M18.5 18.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"
+  },
+  "shapes": {
+    "skuHex": {
+      "defaultSize": { "r": 35 },
+      "icon": { "iconScale": 0.95, "iconRotation": 0 }
+    },
+    "resGearCircle": {
+      "defaultSize": { "r": 25 },
+      "icon": { "iconScale": 0.6, "iconRotation": 0 }
+    },
+    "bomListCircle": {
+      "defaultSize": { "r": 25 },
+      "icon": { "iconScale": 0.9, "iconRotation": 0 }
+    },
+    "purchTruckCircle": {
+      "defaultSize": { "r": 25 },
+      "icon": { "iconScale": 0.7, "iconRotation": 0 }
+    }
+  }
+};
+
+function buildBevelFilter() {
+  const { angle, depth, blur, highlight, shadow } = SPEC.globalBevel;
+  const rad = (angle % 360) * Math.PI / 180;
+  const dx = +(Math.cos(rad) * depth).toFixed(3);
+  const dy = +(Math.sin(rad) * depth).toFixed(3);
+  return `
+    <filter id="inner-emboss" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="${blur}" result="aBlur"/>
+      <feOffset in="aBlur" dx="${dx}" dy="${dy}" result="aShadow"/>
+      <feComposite in="aShadow" in2="SourceAlpha" operator="out" result="innerShadow"/>
+      <feFlood flood-color="#000" flood-opacity="${shadow}" result="shadowColor"/>
+      <feComposite in="shadowColor" in2="innerShadow" operator="in" result="shadowPaint"/>
+      <feOffset in="aBlur" dx="${-dx}" dy="${-dy}" result="aHighlight"/>
+      <feComposite in="aHighlight" in2="SourceAlpha" operator="out" result="innerHighlight"/>
+      <feFlood flood-color="#fff" flood-opacity="${highlight}" result="highlightColor"/>
+      <feComposite in="highlightColor" in2="innerHighlight" operator="in" result="highlightPaint"/>
+      <feMerge>
+        <feMergeNode in="shadowPaint"/>
+        <feMergeNode in="highlightPaint"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>`;
+}
+
+function hexPoints(r) {
+  const pts = [];
+  for (let i = 0; i < 6; i++) {
+    const a = (Math.PI / 3) * i - Math.PI / 6;
+    pts.push([r * Math.cos(a), r * Math.sin(a)]);
+  }
+  return pts.map(p => p.join(',')).join(' ');
+}
+
+export function createNodeIcon(node) {
+    const props = node.properties;
+    let color = '#eef3f9';
+    let baseShapeSvg = '';
+    let iconSvg = '';
+    let r = 30;
+    let shapeSpec;
+    let vadjust = 0; // Set a more neutral default
+
+    if (node.labels.includes('SKU')) {
+        shapeSpec = SPEC.shapes.skuHex;
+        r = shapeSpec.defaultSize.r;
+        color = props.demand_sku ? SPEC.colors.SKU_DEMAND : SPEC.colors.SKU_COMPONENT;
+        if (props.broken_bom) color = SPEC.colors.BROKEN;
+        else if (props.bottleneck) color = SPEC.colors.BOTTLENECK;
+        baseShapeSvg = `<polygon points="${hexPoints(r)}" fill="${color}" filter="url(#inner-emboss)"/>`;
+        iconSvg = `<path fill="white" stroke="none" d="${SPEC.icons.SKU}"/>`;
+        vadjust = r - 20; // Hardcoded new value
+    } else if (node.labels.includes('Res')) {
+        shapeSpec = SPEC.shapes.resGearCircle;
+        r = shapeSpec.defaultSize.r;
+        color = props.bottleneck ? SPEC.colors.BOTTLENECK : SPEC.colors.RESOURCE;
+        baseShapeSvg = `<circle cx="0" cy="0" r="${r}" fill="${color}" filter="url(#inner-emboss)"/>`;
+        iconSvg = `<path fill="white" stroke="none" d="${SPEC.icons.RESOURCE}"/>`;
+        vadjust = r - 20; // Hardcoded new value
+    } else if (node.labels.includes('BOM')) {
+        shapeSpec = SPEC.shapes.bomListCircle;
+        r = shapeSpec.defaultSize.r;
+        color = SPEC.colors.BOM;
+        baseShapeSvg = `<circle cx="0" cy="0" r="${r}" fill="${color}" filter="url(#inner-emboss)"/>`;
+        iconSvg = `<g stroke="white" stroke-width="2.5" stroke-linecap="round"><line x1="-12" y1="-8" x2="-6" y2="-8" /><line x1="0" y1="-8" x2="18" y2="-8" /><line x1="-12" y1="2" x2="-6" y2="2" /><line x1="0" y1="2" x2="12" y2="2" /><line x1="-12" y1="12" x2="-6" y2="12" /><line x1="0" y1="12" x2="18" y2="12" /></g>`;
+        vadjust = r - 20; // Hardcoded new value
+    } else if (node.labels.includes('PurchGroup')) {
+        shapeSpec = SPEC.shapes.purchTruckCircle;
+        r = shapeSpec.defaultSize.r;
+        color = SPEC.colors.PURCH;
+        baseShapeSvg = `<circle cx="0" cy="0" r="${r}" fill="${color}" filter="url(#inner-emboss)"/>`;
+        iconSvg = `<path fill="white" stroke="none" d="${SPEC.icons.PURCH}"/>`;
+        vadjust = r - 20; // Hardcoded new value
+    }
+
+    const scale = shapeSpec.icon?.iconScale || 1;
+    const rotation = shapeSpec.icon?.iconRotation || 0;
+    const iconTransform = `transform="scale(${scale}) rotate(${rotation})"`;
+    const finalIconSvg = `<g ${iconTransform}>${iconSvg}</g>`;
+    
+    const size = r * 2.6;
+    const viewBox = `-${size / 2} -${size / 2} ${size} ${size}`;
+    const finalSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="${viewBox}">
+            <defs>${buildBevelFilter()}</defs>
+            ${baseShapeSvg}
+            ${finalIconSvg}
+        </svg>`;
+
+    return {
+        image: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(finalSvg)}`,
+        size: r,
+        vadjust: vadjust
+    };
+}
+
+--- END OF FILE: ../shape-library.js ---
+
+
+--- START OF FILE: ../mock-news.json ---
+{
+    "articles": [
+        {
+            "title": "[MOCK] US Announces 5% Tariff Reduction on Imported Silicon Wafers",
+            "description": "The administration announced a plan to reduce tariffs on key electronic components, including silicon wafers, from several Asian countries. This is expected to lower costs for domestic chip manufacturers.",
+            "url": "#",
+            "source": { "name": "System Fallback Data" },
+            "imageUrl": "images/default-news.png"
+        },
+        {
+            "title": "[MOCK] Intel Announces Major Fab Plant Expansion in Ohio to Boost Capacity",
+            "description": "In a move to onshore production and increase supply chain resilience, Intel has broken ground on a new state-of-the-art fabrication plant in Ohio, promising to boost global chip capacity.",
+            "url": "#",
+            "source": { "name": "System Fallback Data" },
+            "imageUrl": "images/default-news.png"
+        },
+        {
+            "title": "[MOCK] Report: Global PC Sales Weaker Than Expected, Suggesting Demand Slump",
+            "description": "Analysts report that global sales of personal computers have fallen for the third consecutive quarter, raising concerns about weakening consumer demand for electronics.",
+            "url": "#",
+      "source": { "name": "System Fallback Data" },
+            "imageUrl": "images/default-news.png"
+        },
+        {
+            "title": "[MOCK] Port Congestion in Southeast Asia Worsens, Threatening Chip Shipments",
+            "description": "A combination of labor shortages and high volume is causing significant delays at major ports in Southeast Asia, creating a new bottleneck for the global semiconductor supply chain.",
+            "url": "#",
+            "source": { "name": "System Fallback Data" },
+            "imageUrl": "images/default-news.png"
+        }
+    ]
+}
+
+--- END OF FILE: ../mock-news.json ---
+
+
+--- START OF FILE: ../ui/bomViewer.js ---
+import { createNodeIcon } from '../shape-library.js';
+
+let currentSkuId = null;
+let isDemandSku = false;
+
+// This helper function creates the popup for managing columns
+function createColumnManagerPopup(table, settingsButton) {
+    // Close any existing popups first
+    document.querySelectorAll('.column-manager-popup').forEach(p => p.remove());
+
+    const popup = document.createElement('div');
+    popup.className = 'column-manager-popup';
+    
+    // Temporarily append to measure its width, then position it
+    popup.style.visibility = 'hidden';
+    document.body.appendChild(popup);
+    const popupWidth = popup.offsetWidth;
+    
+    const btnRect = settingsButton.getBoundingClientRect();
+    let leftPos = btnRect.right + window.scrollX - popupWidth;
+    if (leftPos < 10) { // Check if it's going off the left edge
+        leftPos = 10;
+    }
+    popup.style.top = `${btnRect.bottom + window.scrollY + 5}px`;
+    popup.style.left = `${leftPos}px`;
+    popup.style.visibility = 'visible';
+
+    popup.innerHTML = `<h4>Configure Columns</h4>`;
+    const list = document.createElement('ul');
+
+    let draggedItem = null;
+
+    table.getColumns().forEach(column => {
+        const item = document.createElement('li');
+        item.draggable = true;
+        item.dataset.field = column.getField();
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = column.isVisible();
+        checkbox.onchange = () => {
+            if (checkbox.checked) {
+                column.show();
+            } else {
+                column.hide();
+            }
+        };
+
+        const label = document.createElement('span');
+        label.textContent = column.getDefinition().title;
+        
+        item.appendChild(checkbox);
+        item.appendChild(label);
+        list.appendChild(item);
+
+        // Drag and Drop events for reordering
+        item.addEventListener('dragstart', () => {
+            draggedItem = item;
+            setTimeout(() => item.classList.add('dragging'), 0);
+        });
+        item.addEventListener('dragend', () => {
+            setTimeout(() => {
+                draggedItem.classList.remove('dragging');
+                draggedItem = null;
+            }, 0);
+        });
+        item.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            const afterElement = [...list.querySelectorAll('li:not(.dragging)')].reduce((closest, child) => {
+                const box = child.getBoundingClientRect();
+                const offset = e.clientY - box.top - box.height / 2;
+                return (offset < 0 && offset > closest.offset) ? { offset: offset, element: child } : closest;
+            }, { offset: Number.NEGATIVE_INFINITY }).element;
+            
+            if (afterElement == null) {
+                list.appendChild(draggedItem);
+            } else {
+                list.insertBefore(draggedItem, afterElement);
+            }
+            
+            const originalColumnDefs = table.getColumnDefinitions();
+            const columnDefMap = originalColumnDefs.reduce((map, col) => {
+                map[col.field] = col;
+                return map;
+            }, {});
+            
+            const newOrderOfFields = [...list.querySelectorAll('li')].map(li => li.dataset.field);
+            const newColumnDefs = newOrderOfFields.map(field => columnDefMap[field]);
+
+            table.setColumns(newColumnDefs);
+        });
+    });
+
+    popup.appendChild(list);
+
+    // Close popup if clicking outside
+    setTimeout(() => {
+        document.addEventListener('click', function closeHandler(e) {
+            if (!popup.contains(e.target) && e.target !== settingsButton) {
+                popup.remove();
+                document.removeEventListener('click', closeHandler);
+            }
+        });
+    }, 0);
+}
+
+// Reverted modal to simple HTML table for clarity and performance in the small popup
+function handleGraphClick(params, nodes, edges) {
+    const nodePropertiesModal = document.getElementById('node-properties-modal');
+    const nodePropertiesTitle = document.getElementById('node-properties-title');
+    const nodePropertiesContent = document.getElementById('node-properties-content');
+    
+    let clickedItem = null;
+    let itemType = '';
+    if (params.nodes.length > 0) {
+        clickedItem = nodes.get(params.nodes[0]);
+        itemType = clickedItem.nodeName || 'Node';
+    } else if (params.edges.length > 0) {
+        clickedItem = edges.get(params.edges[0]);
+        itemType = 'Relationship';
+    }
+    if (clickedItem) {
+        const properties = JSON.parse(clickedItem.title);
+        nodePropertiesTitle.textContent = `Properties for ${itemType}`;
+        nodePropertiesContent.innerHTML = ''; // Clear previous
+        const table = document.createElement('table');
+        const tableBody = document.createElement('tbody');
+        tableBody.innerHTML = Object.entries(properties).map(([key, value]) => `<tr><td class="font-semibold text-gray-600 pr-4 align-top">${key.replace(/_/g, ' ')}</td><td class="text-gray-800 break-all">${value}</td></tr>`).join('');
+        table.appendChild(tableBody);
+        nodePropertiesContent.appendChild(table);
+        nodePropertiesModal.classList.remove('hidden');
+    }
+}
+
+export function renderNetworkGraph(id, networkData, graphType, targetContainer, shortestPathData = null) {
+    if (!networkData || networkData.length === 0) {
+        targetContainer.innerHTML += '<p class="text-gray-500">No network data found.</p>';
+        return;
+    }
+    const container = document.createElement('div');
+    container.id = 'network-container';
+    targetContainer.appendChild(container);
+    
+    const nodes = new vis.DataSet();
+    const edges = new vis.DataSet();
+    const uniqueNodeIds = new Set();
+    const shortestPathEdgeIds = new Set(shortestPathData ? shortestPathData.flatMap(p => p.relationships).map(r => r.id) : []);
+
+    networkData.forEach(path => {
+        path.nodes.forEach(node => {
+            if (!uniqueNodeIds.has(node.id)) {
+                uniqueNodeIds.add(node.id);
+                const icon = createNodeIcon(node);
+                nodes.add({
+                    id: node.id,
+                    label: node.properties.sku_id || node.properties.item || node.properties.res_id || node.properties.bom_num,
+                    nodeName: node.properties.sku_id || node.properties.item || node.properties.res_id || node.properties.bom_num,
+                    title: JSON.stringify(node.properties, null, 2),
+                    shape: 'image',
+                    image: icon.image,
+                    size: icon.size,
+                    font: {
+                        size: 12,
+                        color: '#4b5563',
+                        vadjust: icon.vadjust
+                    }
+                });
+            }
+        });
+        path.relationships.forEach(rel => {
+            let edgeOptions = { from: rel.startNode, to: rel.endNode, title: JSON.stringify(rel.properties, null, 2), arrows: 'to', color: { color: '#6b7280' } };
+            if (shortestPathEdgeIds.has(rel.id)) { edgeOptions.color = 'gold'; edgeOptions.width = 3; }
+            if (rel.type === 'SOURCING') { edgeOptions.arrows = { to: { enabled: true }, middle: { enabled: true, type: 'image', imageWidth: 20, imageHeight: 20, src: 'images/sourcing_relation.png' } }; }
+            else if (rel.type !== 'CONSUMED_BY' && rel.type !== 'PRODUCES') { edgeOptions.label = rel.type; edgeOptions.font = { size: 10, color: '#6b7280', align: 'middle', strokeWidth: 5, strokeColor: '#ffffff' }; }
+            edges.add(edgeOptions);
+        });
+    });
+    
+    const network = new vis.Network(container, { nodes, edges }, {
+        nodes: { 
+            font: { size: 12, color: '#4b5563' },
+            borderWidth: 0, 
+            shapeProperties: { useImageSize: true } 
+        },
+        edges: { color: { highlight: '#3b82f6' }, smooth: { enabled: true, type: 'straightCross' } },
+        physics: { enabled: false },
+        layout: { hierarchical: { direction: 'LR', sortMethod: 'directed', levelSeparation: 300, nodeSpacing: 150 } },
+        interaction: { navigationButtons: true, keyboard: true }
+    });
+    network.on('click', (params) => handleGraphClick(params, nodes, edges));
+}
+
+function fetchNetworkGraph(skuId, graphType, container) { 
+    fetch('http://127.0.0.1:5000/api/network-graph', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku_id: skuId }) })
+    .then(r => r.json())
+    .then(d => renderNetworkGraph(skuId, d, graphType, container, null)); 
+}
+function fetchNetworkWithShortestPath(skuId, graphType, container) { 
+    fetch('http://127.0.0.1:5000/api/network-with-shortest-path', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku_id: skuId }) })
+    .then(r => r.json())
+    .then(d => renderNetworkGraph(skuId, d.full_network, graphType, container, d.shortest_path)); 
+}
+export function fetchResourceNetworkGraph(resId, graphType, container) { 
+    fetch('http://127.0.0.1:5000/api/resource-network', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ res_id: resId }) })
+    .then(r => r.json())
+    .then(d => renderNetworkGraph(resId, d, graphType, container)); 
+}
+
+// ## MODIFICATION START ##
+// Rewritten to use the user's preferred default column sequence.
+function displaySkuProperties(properties) {
+    const skuPropertiesDisplay = document.getElementById('sku-properties-display');
+    skuPropertiesDisplay.innerHTML = ''; // Clear previous content
+
+    const header = document.createElement('div');
+    header.className = 'flex justify-between items-center mb-4';
+    const titleEl = document.createElement('h3');
+    titleEl.className = 'text-lg font-semibold';
+    titleEl.textContent = "SKU Properties";
+    const settingsButton = document.createElement('button');
+    settingsButton.className = 'flex items-center p-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors';
+    settingsButton.title = 'Configure Columns';
+    settingsButton.innerHTML = `<i class="fas fa-cog"></i>`;
+    header.appendChild(titleEl);
+    header.appendChild(settingsButton);
+    skuPropertiesDisplay.appendChild(header);
+
+    const tableContainer = document.createElement('div');
+    tableContainer.className = 'tabulator-creative';
+    skuPropertiesDisplay.appendChild(tableContainer);
+
+    // Define the preferred column order
+    const preferredOrder = ['item', 'loc', 'demand_sku', 'bottleneck', 'broken_bom', 'cust_demand_qty', 'fcst_demand_qty', 'total_demand_qty', 'infinite_supply', 'shortest_lead_time', 'overloaded_res_count'];
+    
+    const allKeys = Object.keys(properties);
+    const preferredKeysInOrder = preferredOrder.filter(key => allKeys.includes(key));
+    const remainingKeys = allKeys
+        .filter(key => !preferredOrder.includes(key))
+        .sort((a, b) => a.localeCompare(b));
+    
+    const finalKeyOrder = [...preferredKeysInOrder, ...remainingKeys];
+
+    const columns = finalKeyOrder.map(key => ({
+        title: key.replace(/_/g, ' '),
+        field: key,
+        headerHozAlign: "center",
+        hozAlign: "center",
+        resizable: true,
+        headerSort: false, 
+    }));
+
+    const table = new Tabulator(tableContainer, {
+        data: [properties],
+        columns: columns,
+        layout: "fitDataStretch",
+        classes: "tabulator-creative",
+    });
+
+    settingsButton.onclick = (e) => {
+        e.stopPropagation();
+        createColumnManagerPopup(table, settingsButton);
+    };
+
+    skuPropertiesDisplay.classList.remove('hidden');
+}
+
+// New helper function to create a header with a back button for the network view
+function createBomViewerHeader(title, backFunction) {
+    const header = document.createElement('div');
+    header.className = 'flex justify-between items-center mb-4';
+    
+    const titleEl = document.createElement('h2');
+    titleEl.className = 'text-xl font-bold text-gray-800';
+    titleEl.textContent = title;
+    
+    const backButton = document.createElement('button');
+    backButton.className = 'flex items-center p-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors';
+    backButton.title = 'Back to SKU Properties';
+    backButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" /></svg>`;
+    backButton.addEventListener('click', backFunction);
+    
+    header.appendChild(titleEl);
+    header.appendChild(backButton);
+    return header;
+}
+// ## MODIFICATION END ##
+
+function fetchAndDisplaySkuDetails(skuId) {
+    const skuPropertiesDisplay = document.getElementById('sku-properties-display');
+    const getNetworkBtn = document.getElementById('get-network-btn');
+    
+    // Clear any existing graph when fetching new details
+    const oldGraphContainer = document.getElementById('bom-viewer-graph-container');
+    if (oldGraphContainer) oldGraphContainer.remove();
+    
+    fetch('http://127.0.0.1:5000/api/sku-details', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku_id: skuId }) })
+    .then(response => response.json())
+    .then(details => {
+        skuPropertiesDisplay.innerHTML = '';
+        currentSkuId = null;
+        isDemandSku = false;
+
+        getNetworkBtn.disabled = true;
+        getNetworkBtn.className = 'px-4 py-1 bg-gray-300 text-gray-800 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 flex-shrink-0 whitespace-nowrap';
+
+        if (details.found) {
+            currentSkuId = skuId;
+            isDemandSku = details.properties.demand_sku === true;
+            displaySkuProperties(details.properties);
+            getNetworkBtn.disabled = false;
+            getNetworkBtn.className = 'px-4 py-1 bg-green-600 text-white hover:bg-green-700 text-sm font-semibold rounded-lg transition-colors flex-shrink-0 whitespace-nowrap';
+        } else {
+            skuPropertiesDisplay.innerHTML = `<p class="text-red-500 p-4">SKU ID '${skuId}' not found.</p>`;
+            skuPropertiesDisplay.classList.remove('hidden');
+        }
+    })
+    .catch(error => console.error('Error fetching SKU details:', error));
+}
+
+export function initBomViewer() {
+    const getSkuDetailsBtn = document.getElementById('get-sku-details-btn');
+    const itemInput = document.getElementById('item-input');
+    const locInput = document.getElementById('loc-input');
+    const getNetworkBtn = document.getElementById('get-network-btn');
+    const bomViewerWrapper = document.getElementById('bom-viewer-wrapper');
+    const nodePropertiesModal = document.getElementById('node-properties-modal');
+    const closePropertiesModalBtn = nodePropertiesModal.querySelector('.close-properties-modal');
+
+    getSkuDetailsBtn.addEventListener('click', () => {
+        const skuId = `${itemInput.value.trim()}@${locInput.value.trim()}`;
+        if (itemInput.value.trim() && locInput.value.trim()) {
+            fetchAndDisplaySkuDetails(skuId);
+        } else {
+            alert('Please enter both an Item and a Location.');
+        }
+    });
+
+    getNetworkBtn.addEventListener('click', () => {
+        if (currentSkuId) {
+            document.getElementById('sku-properties-display').classList.add('hidden');
+            const oldGraphContainer = document.getElementById('bom-viewer-graph-container');
+            if (oldGraphContainer) oldGraphContainer.remove();
+            
+            const graphContainer = document.createElement('div');
+            graphContainer.id = 'bom-viewer-graph-container';
+            graphContainer.classList.add('w-full', 'mt-4');
+            
+            const networkTitle = `Network for ${currentSkuId}`;
+            const backFunction = () => fetchAndDisplaySkuDetails(currentSkuId);
+            
+            graphContainer.appendChild(createBomViewerHeader(networkTitle, backFunction));
+            bomViewerWrapper.appendChild(graphContainer);
+            
+            if (isDemandSku) {
+                fetchNetworkWithShortestPath(currentSkuId, networkTitle, graphContainer);
+            } else {
+                fetchNetworkGraph(currentSkuId, networkTitle, graphContainer);
+            }
+        }
+    });
+    
+    closePropertiesModalBtn.addEventListener('click', () => nodePropertiesModal.classList.add('hidden'));
+    nodePropertiesModal.addEventListener('click', (event) => {
+        if (event.target === nodePropertiesModal) nodePropertiesModal.classList.add('hidden');
+    });
+}
+
+--- END OF FILE: ../ui/bomViewer.js ---
+
+
+--- START OF FILE: ../ui/chat.js ---
+let currentChatId = null;
+
+function getChatHistory() { return JSON.parse(localStorage.getItem('chatHistory') || '[]'); }
+function saveChatHistory(history) { localStorage.setItem('chatHistory', JSON.stringify(history)); }
+
+function showThinkingIndicator() {
+    const chatLog = document.getElementById('chat-log');
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('self-start');
+    const loader = document.createElement('div');
+    loader.className = 'eleva-loader';
+    const svgRing = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svgRing.setAttribute('class', 'eleva-ring');
+    svgRing.setAttribute('viewBox', '0 0 50 50');
+    svgRing.innerHTML = `<defs><linearGradient id="elevaGradient" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#0096C7"/><stop offset="40%" stop-color="#48CAE4"/><stop offset="70%" stop-color="#90E0EF"/><stop offset="100%" stop-color="#CAF0F8"/></linearGradient></defs><circle class="path" cx="25" cy="25" r="20" fill="none" stroke="url(#elevaGradient)" stroke-width="4"/>`;
+    const icon = document.createElement('img');
+    icon.className = 'eleva-icon';
+    icon.src = 'images/ElevaAI_short_logo.svg';
+    icon.alt = 'Eleva AI';
+    loader.appendChild(svgRing);
+    loader.appendChild(icon);
+    messageDiv.appendChild(loader);
+    chatLog.appendChild(messageDiv);
+    chatLog.scrollTop = chatLog.scrollHeight;
+    return messageDiv;
+}
+
+// ## MODIFICATION START ##
+function addMessageToLog(message, sender) {
+    const chatLog = document.getElementById('chat-log');
+    const messageContainer = document.createElement('div');
+    messageContainer.classList.add('p-3', 'rounded-lg', 'max-w-xs', 'lg:max-w-4xl', 'break-words');
+    messageContainer.classList.add(sender === 'user' ? 'user-message' : 'assistant-message');
+
+    if (sender === 'assistant') {
+        // Use Marked to parse Markdown and DOMPurify to sanitize the result for security
+        const dirtyHtml = marked.parse(message);
+        messageContainer.innerHTML = DOMPurify.sanitize(dirtyHtml);
+    } else {
+        // User messages are always plain text
+        messageContainer.textContent = message;
+    }
+    
+    chatLog.appendChild(messageContainer);
+    chatLog.scrollTop = chatLog.scrollHeight;
+}
+// ## MODIFICATION END ##
+
+function handleChatSubmit(renderChatHistoryFunc) {
+    const chatInput = document.getElementById('chat-input');
+    const chatWelcome = document.getElementById('chat-welcome');
+    const chatLog = document.getElementById('chat-log');
+    const chatSection = document.getElementById('chat-section');
+
+    const userMessage = chatInput.value.trim();
+    if (!userMessage) return;
+    
+    chatWelcome.classList.add('hidden');
+    chatLog.classList.remove('hidden');
+    chatSection.classList.remove('is-new-chat');
+    addMessageToLog(userMessage, 'user');
+    chatInput.value = '';
+    const thinkingIndicator = showThinkingIndicator();
+    
+    let history = getChatHistory();
+    let currentChat;
+
+    if (currentChatId === null) {
+        currentChatId = `chat-${new Date().getTime()}`;
+        const newChat = { 
+            id: currentChatId, 
+            title: userMessage.substring(0, 30) + (userMessage.length > 30 ? '...' : ''), 
+            messages: [{ sender: 'user', text: userMessage }] 
+        };
+        history.unshift(newChat);
+        currentChat = newChat;
+        renderChatHistoryFunc();
+    } else {
+        currentChat = history.find(c => c.id === currentChatId);
+        if (currentChat) {
+            currentChat.messages.push({ sender: 'user', text: userMessage });
+        }
+    }
+    saveChatHistory(history); 
+
+    const historyForApi = currentChat.messages
+        .slice(0, -1) 
+        .map(msg => ({
+            role: msg.sender === 'user' ? 'user' : 'model',
+            parts: [{ text: msg.text }]
+        }));
+
+    fetch('http://127.0.0.1:5000/api/chat', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ 
+            message: userMessage, 
+            history: historyForApi
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        thinkingIndicator.remove();
+        const assistantMessageText = data.data || data.response;
+        addMessageToLog(assistantMessageText, 'assistant');
+
+        if (currentChat) {
+            currentChat.messages.push({ sender: 'assistant', text: assistantMessageText, data: data });
+            saveChatHistory(history); 
+        }
+    })
+    .catch(error => {
+        thinkingIndicator.remove();
+        console.error('Error with chat API:', error);
+        addMessageToLog('Sorry, I had trouble connecting.', 'assistant');
+    });
+}
+
+function deleteChat(chatId, renderChatHistoryFunc) {
+    let history = getChatHistory();
+    saveChatHistory(history.filter(chat => chat.id !== chatId));
+    renderChatHistoryFunc();
+    if (currentChatId === chatId) startNewChat();
+}
+
+function loadChat(chatId, showChatView) {
+    const chatLog = document.getElementById('chat-log');
+    const chatWelcome = document.getElementById('chat-welcome');
+    const chatSection = document.getElementById('chat-section');
+    const chat = getChatHistory().find(c => c.id === chatId);
+    if (chat) {
+        currentChatId = chatId;
+        chatLog.innerHTML = '';
+        chat.messages.forEach(msg => addMessageToLog(msg.text, msg.sender, msg.data));
+        chatWelcome.classList.add('hidden');
+        chatLog.classList.remove('hidden');
+        chatSection.classList.remove('is-new-chat');
+        showChatView();
+    }
+}
+
+export function startNewChat() {
+    const chatLog = document.getElementById('chat-log');
+    const chatWelcome = document.getElementById('chat-welcome');
+    const chatSection = document.getElementById('chat-section');
+    currentChatId = null;
+    chatLog.innerHTML = '';
+    chatLog.classList.add('hidden');
+    chatWelcome.classList.remove('hidden');
+    chatSection.classList.add('is-new-chat');
+}
+
+function renderChatHistory(showChatView) {
+    const chatHistoryList = document.getElementById('chat-history-list');
+    const history = getChatHistory();
+    chatHistoryList.innerHTML = '';
+    history.forEach(chat => {
+        const historyItem = document.createElement('div');
+        historyItem.classList.add('group', 'flex', 'items-center', 'justify-between', 'p-2', 'text-sm', 'hover:bg-gray-300', 'rounded', 'cursor-pointer');
+        historyItem.setAttribute('data-chat-id', chat.id);
+        historyItem.addEventListener('click', () => loadChat(chat.id, showChatView));
+        const title = document.createElement('span');
+        title.classList.add('truncate');
+        title.textContent = chat.title;
+        const deleteBtn = document.createElement('button');
+        deleteBtn.classList.add('opacity-0', 'group-hover:opacity-100', 'p-1', 'rounded-md', 'hover:bg-gray-400', 'z-10');
+        deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>`;
+        deleteBtn.addEventListener('click', (event) => { 
+            event.stopPropagation(); 
+            deleteChat(chat.id, () => renderChatHistory(showChatView)); 
+        });
+        historyItem.appendChild(title);
+        historyItem.appendChild(deleteBtn);
+        chatHistoryList.appendChild(historyItem);
+    });
+}
+
+export function initChat(showChatView) {
+    const chatInput = document.getElementById('chat-input');
+    const chatSendBtn = document.getElementById('chat-send-btn');
+    
+    chatSendBtn.addEventListener('click', () => handleChatSubmit(() => renderChatHistory(showChatView)));
+    chatInput.addEventListener('keydown', (event) => { 
+        if (event.key === 'Enter') handleChatSubmit(() => renderChatHistory(showChatView)); 
+    });
+    
+    renderChatHistory(showChatView);
+}
+
+--- END OF FILE: ../ui/chat.js ---
+
+
+--- START OF FILE: ../ui/constraintAnalysis.js ---
+// ui/constraintAnalysis.js
+
+import { fetchResourceNetworkGraph } from './bomViewer.js';
+
+const cardsContainer = document.getElementById('ca-cards-container');
+const resultsContainer = document.getElementById('ca-results-container');
+
+function createCaHeader(title, backFunction = null) {
+    const header = document.createElement('div');
+    header.className = 'flex justify-between items-center mb-4 px-2';
+    
+    const titleEl = document.createElement('h2');
+    titleEl.className = 'text-xl font-bold text-gray-800';
+    titleEl.textContent = title;
+    
+    const buttonGroup = document.createElement('div');
+    buttonGroup.className = 'flex items-center space-x-2';
+    
+    header.appendChild(titleEl);
+    header.appendChild(buttonGroup);
+
+    if (backFunction) {
+        const backButton = document.createElement('button');
+        backButton.className = 'flex items-center p-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors';
+        backButton.title = 'Back';
+        backButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" /></svg>`;
+        backButton.addEventListener('click', backFunction);
+        buttonGroup.appendChild(backButton);
+    }
+    return header;
+}
+
+
+// --- Functions to render drill-down content ---
+
+function renderDemandSearchUI() {
+    resultsContainer.innerHTML = ''; 
+    
+    const searchContainer = document.createElement('div');
+    searchContainer.className = 'px-2';
+    searchContainer.innerHTML = `
+        <div class="bg-white rounded-xl shadow-lg p-4">
+            <div class="flex items-center space-x-2">
+                <input type="text" id="fg-item-input" placeholder="Enter Item..." class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <input type="text" id="fg-loc-input" placeholder="Enter Location..." class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <button id="fg-search-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex-shrink-0">
+                    <i class="fas fa-search"></i>
+                    <span class="ml-2">Search</span>
+                </button>
+            </div>
+        </div>
+        <div id="fg-health-report-container" class="mt-6"></div>
+    `;
+    resultsContainer.appendChild(searchContainer);
+
+    const searchBtn = document.getElementById('fg-search-btn');
+    const itemInput = document.getElementById('fg-item-input');
+    const locInput = document.getElementById('fg-loc-input');
+    
+    const performSearch = () => {
+        const item = itemInput.value.trim();
+        const loc = locInput.value.trim();
+        if (item && loc) {
+            handleFgSearch(item, loc);
+        } else {
+            alert('Please enter both an Item and a Location.');
+        }
+    };
+
+    searchBtn.addEventListener('click', performSearch);
+    itemInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') performSearch(); });
+    locInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') performSearch(); });
+}
+
+async function handleFgSearch(item, loc) {
+    const reportContainer = document.getElementById('fg-health-report-container');
+    const searchBtn = document.getElementById('fg-search-btn');
+    reportContainer.innerHTML = `<div class="flex justify-center items-center p-8"><i class="fas fa-spinner fa-spin fa-2x text-gray-400"></i></div>`;
+    searchBtn.disabled = true;
+
+    try {
+        const response = await fetch('/api/constraints/fg-search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item, loc })
+        });
+        const data = await response.json();
+        renderFgHealthReport(data);
+    } catch (error) {
+        console.error("Error fetching FG health report:", error);
+        reportContainer.innerHTML = `<p class="text-red-500">An error occurred while fetching the report.</p>`;
+    } finally {
+        searchBtn.disabled = false;
+    }
+}
+
+function getStatusBadge(status) {
+    const styles = {
+        'Healthy': 'bg-green-100 text-green-800',
+        'At Risk': 'bg-yellow-100 text-yellow-800',
+        'Constrained': 'bg-red-100 text-red-800'
+    };
+    const icons = {
+        'Healthy': 'fa-check-circle',
+        'At Risk': 'fa-exclamation-triangle',
+        'Constrained': 'fa-exclamation-circle'
+    };
+    return `<span class="ml-4 px-3 py-1 text-sm font-medium rounded-full ${styles[status]}"><i class="fas ${icons[status]} mr-1"></i> ${status}</span>`;
+}
+
+function renderFgHealthReport(data) {
+    const reportContainer = document.getElementById('fg-health-report-container');
+    reportContainer.innerHTML = '';
+
+    if (!data.found) {
+        reportContainer.innerHTML = `<p class="text-red-500 p-4">SKU '${data.sku}' not found.</p>`;
+        return;
+    }
+
+    const header = document.createElement('div');
+    header.className = 'flex items-center mb-4 px-2';
+    header.innerHTML = `
+        <h3 class="text-xl font-bold text-gray-800">${data.sku}</h3>
+        ${getStatusBadge(data.status)}
+    `;
+    reportContainer.appendChild(header);
+    
+    const tableContainer = document.createElement('div');
+    tableContainer.className = 'px-2';
+    reportContainer.appendChild(tableContainer);
+
+    const tableData = [{
+        id: 1,
+        sku: data.sku,
+        totalDemands: data.all_demands,
+        totalDemandsSummary: `${data.total_demand_count} - ${Math.round(data.total_demand_qty).toLocaleString()}`,
+        constrainedDemands: data.constrained_demands,
+        constrainedDemandsSummary: `${data.constrained_demand_count} - ${Math.round(data.constrained_demand_qty).toLocaleString()}`,
+        constraints: data.constraints,
+        constraintsSummary: data.constraints.length
+    }];
+    
+    const expanderFormatter = (cell, formatterParams) => {
+        const details = cell.getValue() || [];
+        const summaryText = cell.getRow().getData()[formatterParams.summaryField];
+        if (details.length === 0) return summaryText; 
+        
+        return `<span class="expand-handle cursor-pointer text-indigo-600 hover:text-indigo-800" data-target="${formatterParams.targetId}"><i class="fas fa-caret-right fa-fw mr-2"></i>${summaryText}</span>`;
+    };
+
+    new Tabulator(tableContainer, {
+        data: tableData,
+        layout: "fitDataStretch",
+        rowFormatter: (row) => {
+            const rowElement = row.getElement();
+            const detailElement = document.createElement("div"); 
+            detailElement.classList.add("hidden", "p-0", "bg-gray-50", "border-t");
+            rowElement.appendChild(detailElement);
+            
+            rowElement.addEventListener('click', (e) => {
+                const handle = e.target.closest('.expand-handle');
+                if (!handle) return;
+                
+                e.stopPropagation();
+                const targetId = handle.dataset.target;
+                const data = row.getData();
+                let isOpening = !detailElement.classList.contains("hidden") && detailElement.dataset.activeTarget === targetId;
+
+                rowElement.querySelectorAll('.expand-handle i').forEach(icon => {
+                    icon.classList.remove('fa-caret-down');
+                    icon.classList.add('fa-caret-right');
+                });
+                
+                if (isOpening) {
+                    detailElement.classList.add("hidden");
+                    detailElement.innerHTML = '';
+                } else {
+                    detailElement.classList.remove("hidden");
+                    detailElement.dataset.activeTarget = targetId;
+                    handle.querySelector("i").classList.remove("fa-caret-right");
+                    handle.querySelector("i").classList.add("fa-caret-down");
+                    
+                    detailElement.innerHTML = ''; 
+                    
+                    if (targetId === 'total' || targetId === 'constrained') {
+                        const demandData = data[targetId === 'total' ? 'totalDemands' : 'constrainedDemands'];
+                        
+                        let columns = [
+                            { title: "Order ID", field: "orderId" }, { title: "Seq Num", field: "seqnum" },
+                            { title: "Qty", field: "qty", hozAlign: "right" }, { title: "Date", field: "date" }, { title: "Type", field: "type" }
+                        ];
+
+                        if (targetId === 'constrained') {
+                            columns.unshift({
+                                title: "Constraints",
+                                field: "constraints",
+                                hozAlign: "center",
+                                width: 150,
+                                formatter: (cell) => {
+                                    const constraints = cell.getValue() || [];
+                                    if (constraints.length === 0) return "0";
+                                    return `<span class="expand-constraints cursor-pointer text-indigo-600 hover:text-indigo-800"><i class="fas fa-caret-right fa-fw"></i> ${constraints.length}</span>`;
+                                }
+                            });
+                        }
+                        
+                        new Tabulator(detailElement, {
+                            data: demandData,
+                            layout: "fitData",
+                            cssClass: "tabulator-creative",
+                            rowFormatter: (subRow) => {
+                                const subRowData = subRow.getData();
+                                const subRowElement = subRow.getElement();
+                                if(subRowData.constraints && subRowData.constraints.length > 0) {
+                                    const subDetailElement = document.createElement('div');
+                                    subDetailElement.classList.add("hidden", "p-4", "bg-gray-100", "border-t", "text-left");
+                                    
+                                    let html = '<ul class="space-y-2 list-disc list-inside">';
+                                    subRowData.constraints.forEach(c => {
+                                        const utilPercent = (c.utilization * 100).toFixed(0);
+                                        html += `<li class="text-sm text-gray-700">Constraint on <strong>${c.resourceId}</strong> in <strong>Week ${c.week}</strong> at <strong class="text-red-600">${utilPercent}%</strong> utilization.</li>`;
+                                    });
+                                    html += '</ul>';
+                                    subDetailElement.innerHTML = html;
+                                    subRowElement.appendChild(subDetailElement);
+
+                                    const subCellEl = subRow.getCell("constraints");
+                                    if(subCellEl) {
+                                        const subHandle = subCellEl.getElement().querySelector('.expand-constraints');
+                                        if (subHandle) {
+                                            subHandle.addEventListener('click', (evt) => {
+                                                evt.stopPropagation();
+                                                subDetailElement.classList.toggle('hidden');
+                                                subHandle.querySelector("i").classList.toggle("fa-caret-right");
+                                                subHandle.querySelector("i").classList.toggle("fa-caret-down");
+                                            });
+                                        }
+                                    }
+                                }
+                            },
+                            columns: columns
+                        });
+                    } else if (targetId === 'constraints') {
+                        let html = '<ul class="space-y-2 list-disc list-inside p-4 text-left">';
+                        data.constraints.forEach(c => {
+                            const utilPercent = (c.utilization * 100).toFixed(0);
+                            html += `<li class="text-sm text-gray-700">Constraint on <strong>${c.resourceId}</strong> in <strong>Week ${c.week}</strong> at <strong class="text-red-600">${utilPercent}%</strong> utilization.</li>`;
+                        });
+                        html += '</ul>';
+                        detailElement.innerHTML = html;
+                    }
+                }
+            });
+        },
+        columns: [
+            { title: "SKU", field: "sku", width: 250, cssClass: "font-bold", hozAlign: "left" },
+            { title: "Total Demand", field: "totalDemands", hozAlign: "left", formatter: expanderFormatter, formatterParams: { summaryField: 'totalDemandsSummary', targetId: 'total' } },
+            { title: "Constrained Demand", field: "constrainedDemands", hozAlign: "left", formatter: expanderFormatter, formatterParams: { summaryField: 'constrainedDemandsSummary', targetId: 'constrained' } },
+            { title: "Constraints", field: "constraints", hozAlign: "left", formatter: expanderFormatter, formatterParams: { summaryField: 'constraintsSummary', targetId: 'constraints' } }
+        ]
+    });
+}
+
+
+function renderOrderSearchUI() {
+    resultsContainer.innerHTML = ''; 
+    resultsContainer.appendChild(createCaHeader("Order Search"));
+
+    const searchContainer = document.createElement('div');
+    searchContainer.className = 'px-2';
+    searchContainer.innerHTML = `
+        <div class="bg-white rounded-xl shadow-lg p-4">
+            <div class="flex items-center space-x-2">
+                <input type="text" id="ca-order-search-input-internal" placeholder="Enter Order ID or Seqnum..." class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <button id="ca-order-search-btn-internal" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex-shrink-0">
+                    <i class="fas fa-search"></i>
+                    <span class="ml-2">Analyze</span>
+                </button>
+            </div>
+        </div>
+        <div id="ca-order-results-container-internal" class="hidden mt-6 space-y-6">
+            <div class="bg-white rounded-xl shadow-lg p-4">
+                <h3 class="text-lg font-semibold text-gray-800 mb-2">Order Details</h3>
+                <div id="ca-order-details-internal"></div>
+            </div>
+            <div class="bg-white rounded-xl shadow-lg p-4">
+                <h3 class="text-lg font-semibold text-gray-800 mb-2">Linked Constraints</h3>
+                <div id="ca-order-constraints-internal"></div>
+            </div>
+        </div>
+    `;
+    resultsContainer.appendChild(searchContainer);
+
+    const searchBtn = document.getElementById('ca-order-search-btn-internal');
+    const searchInput = document.getElementById('ca-order-search-input-internal');
+    searchBtn.addEventListener('click', () => handleOrderSearchInternal());
+    searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') handleOrderSearchInternal();
+    });
+}
+
+async function handleOrderSearchInternal() {
+    const input = document.getElementById('ca-order-search-input-internal');
+    const resultsContainerInternal = document.getElementById('ca-order-results-container-internal');
+    const detailsContainer = document.getElementById('ca-order-details-internal');
+    const constraintsContainer = document.getElementById('ca-order-constraints-internal');
+    const searchBtn = document.getElementById('ca-order-search-btn-internal');
+    
+    const orderId = input.value.trim();
+    if (!orderId) return;
+
+    searchBtn.disabled = true;
+    searchBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i><span class="ml-2">Analyzing...</span>`;
+    resultsContainerInternal.classList.add('hidden');
+    
+    try {
+        const response = await fetch('/api/constraints/order-search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId: orderId })
+        });
+        const data = await response.json();
+        renderOrderDetails(data.orderDetails, detailsContainer);
+        renderConstraintList(data.constraints, constraintsContainer);
+        resultsContainerInternal.classList.remove('hidden');
+    } catch (error) {
+        console.error("Error fetching order constraints:", error);
+        detailsContainer.innerHTML = `<p class="text-red-500">An error occurred while fetching data.</p>`;
+    } finally {
+        searchBtn.disabled = false;
+        searchBtn.innerHTML = `<i class="fas fa-search"></i><span class="ml-2">Analyze</span>`;
+    }
+}
+
+async function renderImpactedDemandsTable() {
+    resultsContainer.innerHTML = '';
+    resultsContainer.appendChild(createCaHeader("Impacted Demands"));
+    
+    const contentContainer = document.createElement('div');
+    contentContainer.className = 'px-2';
+    resultsContainer.appendChild(contentContainer);
+
+    contentContainer.innerHTML = `<div class="flex justify-center items-center p-8"><i class="fas fa-spinner fa-spin fa-2x text-gray-400"></i></div>`;
+
+    try {
+        const response = await fetch('/api/constraints/impacted-demands');
+        const data = await response.json();
+        contentContainer.innerHTML = '';
+        
+        if (!data || data.length === 0) {
+            contentContainer.innerHTML = `<p class="text-gray-500">No impacted demands found.</p>`;
+            return;
+        }
+
+        const tableContainer = document.createElement('div');
+        tableContainer.className = 'tabulator-creative';
+        contentContainer.appendChild(tableContainer);
+
+        new Tabulator(tableContainer, {
+            data: data,
+            layout: "fitDataStretch",
+            rowFormatter: function(row) {
+                const data = row.getData();
+                const constraints = data.constraints;
+                const rowElement = row.getElement();
+
+                if (constraints && constraints.length > 0) {
+                    const detailElement = document.createElement("div");
+                    detailElement.classList.add("hidden", "p-4", "bg-gray-50", "border-t");
+                    let html = '<ul class="space-y-2 list-disc list-inside">';
+                    constraints.forEach(c => {
+                        const utilPercent = (c.utilization * 100).toFixed(0);
+                        html += `<li class="text-sm text-gray-700">Resource <code class="bg-gray-200 p-1 rounded">${c.resourceId}</code> was <strong>${utilPercent}% utilized</strong> in Week ${c.week}.</li>`;
+                    });
+                    html += '</ul>';
+                    detailElement.innerHTML = html;
+                    rowElement.appendChild(detailElement);
+                    
+                    const cellEl = row.getCell("constraints");
+                    if (cellEl) {
+                        const handle = cellEl.getElement().querySelector(".expand-handle");
+                        if (handle) {
+                            handle.addEventListener("click", (e) => {
+                                e.stopPropagation();
+                                detailElement.classList.toggle("hidden");
+                                handle.querySelector("i").classList.toggle("fa-caret-right");
+                                handle.querySelector("i").classList.toggle("fa-caret-down");
+                            });
+                        }
+                    }
+                }
+            },
+            columns: [
+                {
+                    title: "Constraints", field: "constraints", hozAlign: "center", width: 150, headerSort: false,
+                    formatter: function(cell) {
+                        const constraints = cell.getValue() || [];
+                        const count = constraints.length;
+                        if (count === 0) return "0";
+                        return `<span class="expand-handle cursor-pointer text-indigo-600 hover:text-indigo-800"><i class="fas fa-caret-right fa-fw"></i> ${count}</span>`;
+                    },
+                    sorter: function(a, b){ return (a?.length || 0) - (b?.length || 0); }
+                },
+                { title: "Order ID", field: "demand.orderId", width: 200, headerFilter: "input" },
+                { title: "Seq Num", field: "demand.seqnum", headerFilter: "input" },
+                { title: "SKU", field: "demand.sku_id", width: 250, headerFilter: "input" },
+                { title: "Qty", field: "demand.qty", hozAlign: "right" },
+                { title: "Date", field: "demand.date" },
+                { title: "Type", field: "demand.type", headerFilter: "select", headerFilterParams: {values: true} },
+            ],
+        });
+        
+    } catch (error) {
+        console.error("Error fetching impacted demands:", error);
+        contentContainer.innerHTML = `<p class="text-red-500">An error occurred while fetching data.</p>`;
+    }
+}
+
+function renderBottleneckView(summaryData) {
+    resultsContainer.innerHTML = '';
+    resultsContainer.appendChild(createCaHeader("Bottleneck Analysis"));
+
+    const subcardsContent = document.createElement('div');
+    subcardsContent.className = 'max-w-2xl px-2';
+    subcardsContent.innerHTML = `
+        <section class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div id="ca-bottleneck-resources-card-drilldown" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
+                <div class="flex items-baseline justify-between">
+                    <h4 class="text-base font-bold text-cyan-800">Resources</h4>
+                    <span id="ca-bottleneck-resources-count-drilldown" class="text-lg font-bold text-cyan-800">0</span>
+                </div>
+            </div>
+            <div id="ca-bottleneck-skus-card-drilldown" class="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
+                <div class="flex items-baseline justify-between">
+                    <h4 class="text-base font-bold text-indigo-800">SKU</h4>
+                    <span id="ca-bottleneck-skus-count-drilldown" class="text-lg font-bold text-indigo-800">0</span>
+                </div>
+            </div>
+        </section>
+    `;
+    resultsContainer.appendChild(subcardsContent);
+    
+    document.getElementById('ca-bottleneck-resources-count-drilldown').textContent = (summaryData.constrainedResourceCount || 0).toLocaleString();
+    document.getElementById('ca-bottleneck-skus-count-drilldown').textContent = (summaryData.bottleneckSkusCount || 0).toLocaleString();
+    
+    document.getElementById('ca-bottleneck-resources-card-drilldown').addEventListener('click', () => renderConstrainedResourcesList(summaryData));
+    document.getElementById('ca-bottleneck-skus-card-drilldown').addEventListener('click', renderBottleneckSkusTable);
+}
+
+
+async function renderConstrainedResourcesList(summaryData) {
+    resultsContainer.innerHTML = '';
+    const header = createCaHeader("Constrained Resources", () => renderBottleneckView(summaryData));
+    resultsContainer.appendChild(header);
+    
+    const contentContainer = document.createElement('div');
+    contentContainer.className = 'px-2';
+    resultsContainer.appendChild(contentContainer);
+    contentContainer.innerHTML = `<div class="flex justify-center items-center p-8"><i class="fas fa-spinner fa-spin fa-2x text-gray-400"></i></div>`;
+    
+    try {
+        const response = await fetch('/api/constraints/constrained-resources');
+        const data = await response.json();
+        contentContainer.innerHTML = '';
+
+        if (!data || data.length === 0) {
+            contentContainer.innerHTML = `<p class="text-gray-500">No constrained resources found.</p>`;
+            return;
+        }
+
+        const tableContainer = document.createElement('div');
+        tableContainer.className = 'tabulator-creative';
+        contentContainer.appendChild(tableContainer);
+        
+        const table = new Tabulator(tableContainer, {
+            data: data,
+            maxHeight: "70vh", 
+            layout: "fitDataStretch",
+            rowFormatter: function(row) {
+                const data = row.getData();
+                const rowElement = row.getElement();
+
+                if (data.constraintDetails && data.constraintDetails.length > 0) {
+                    const detailElement = document.createElement("div");
+                    detailElement.id = `constraints-detail-${data.properties.res_id}`;
+                    detailElement.classList.add("hidden", "p-4", "bg-gray-50", "border-t", "text-left");
+                    
+                    let html = '<ul class="space-y-2 list-disc list-inside">';
+                    data.constraintDetails.forEach(c_detail => {
+                        const utilPercent = (c_detail.constraint.utilization * 100).toFixed(0);
+                        html += `<li class="text-sm text-gray-700">Constraint in <strong>Week ${c_detail.constraint.week}</strong> at <strong class="text-red-600">${utilPercent}%</strong> utilization.</li>`;
+                    });
+                    html += '</ul>';
+                    detailElement.innerHTML = html;
+                    rowElement.appendChild(detailElement);
+                }
+
+                const totalDemands = data.constraintDetails.reduce((acc, cv) => acc + cv.demands.length, 0);
+                if (totalDemands > 0) {
+                    const demandsDetailElement = document.createElement("div");
+                    demandsDetailElement.id = `demands-detail-${data.properties.res_id}`;
+                    demandsDetailElement.classList.add("hidden", "p-0", "bg-gray-50", "border-t");
+                    rowElement.appendChild(demandsDetailElement);
+                }
+
+                const constraintsCell = row.getCell("constraints");
+                if (constraintsCell) {
+                    const handle = constraintsCell.getElement().querySelector(".expand-constraints");
+                    if (handle) {
+                        handle.addEventListener("click", (e) => {
+                            e.stopPropagation();
+                            document.getElementById(`constraints-detail-${data.properties.res_id}`).classList.toggle("hidden");
+                            handle.querySelector("i").classList.toggle("fa-caret-right");
+                            handle.querySelector("i").classList.toggle("fa-caret-down");
+                        });
+                    }
+                }
+                
+                const demandsCell = row.getCell("demands");
+                if (demandsCell) {
+                    const handle = demandsCell.getElement().querySelector(".expand-demands");
+                    if (handle) {
+                        handle.addEventListener("click", (e) => {
+                            e.stopPropagation();
+                            const demandsContainer = document.getElementById(`demands-detail-${data.properties.res_id}`);
+                            demandsContainer.classList.toggle("hidden");
+                            handle.querySelector("i").classList.toggle("fa-caret-right");
+                            handle.querySelector("i").classList.toggle("fa-caret-down");
+
+                            if (!demandsContainer.classList.contains("hidden") && !demandsContainer.hasChildNodes()) {
+                                let allDemands = [];
+                                data.constraintDetails.forEach(cd => {
+                                    cd.demands.forEach(demand => {
+                                        allDemands.push({ ...demand, constraintDate: `Week ${cd.constraint.week}` });
+                                    });
+                                });
+                                
+                                new Tabulator(demandsContainer, {
+                                    data: allDemands,
+                                    layout: "fitData",
+                                    columns: [
+                                        { title: "Constraint Week", field: "constraintDate" },
+                                        { title: "Order ID", field: "orderId" },
+                                        { title: "Seq Num", field: "seqnum" },
+                                        { title: "SKU", field: "sku_id", widthGrow: 2 },
+                                        { title: "Qty", field: "qty", hozAlign: "right" },
+                                        { title: "Type", field: "type" }
+                                    ]
+                                });
+                            }
+                        });
+                    }
+                }
+            },
+            columns: [
+                { 
+                    title: "Constraints", 
+                    field: "constraints",
+                    hozAlign: "center", 
+                    width: 150,
+                    headerSort: false,
+                    formatter: (cell) => {
+                        const details = cell.getRow().getData().constraintDetails || [];
+                        const count = details.length;
+                        if (count === 0) return "0";
+                        return `<span class="expand-constraints cursor-pointer text-indigo-600 hover:text-indigo-800"><i class="fas fa-caret-right fa-fw"></i> ${count}</span>`;
+                    },
+                },
+                { 
+                    title: "Impacted Demands", 
+                    field: "demands",
+                    hozAlign: "center", 
+                    width: 200,
+                    headerSort: false,
+                    formatter: (cell) => {
+                        const details = cell.getRow().getData().constraintDetails || [];
+                        const count = details.reduce((acc, cv) => acc + cv.demands.length, 0);
+                        const qty = details.reduce((acc, cv) => acc + (cv.totalDemandQty || 0), 0);
+                        if (count === 0) return "0 - 0";
+                        return `<span class="expand-demands cursor-pointer text-orange-600 hover:text-orange-800"><i class="fas fa-caret-right fa-fw"></i> ${count} - ${Math.round(qty).toLocaleString()}</span>`;
+                    },
+                },
+                { 
+                    title: "Resource ID", 
+                    field: "properties.res_id",
+                    widthGrow: 2.5,
+                    formatter: (cell) => {
+                        const resId = cell.getValue();
+                        const buttons = `
+                            <button class="ml-2 px-2 py-1 bg-cyan-500 text-white rounded-lg text-xs hover:bg-cyan-600" title="Show Network" data-res-id="${resId}" data-action="network">
+                                <i class="fas fa-project-diagram fa-fw"></i>
+                            </button>
+                            <button class="ml-1 px-2 py-1 bg-indigo-500 text-white rounded-lg text-xs hover:bg-indigo-600" title="View Time-Phase" data-res-id="${resId}" data-action="timephase">
+                                <i class="fas fa-calendar-alt fa-fw"></i>
+                            </button>
+                        `;
+                        return `<span>${resId}</span> ${buttons}`;
+                    }
+                },
+            ],
+        });
+        
+        table.on("cellClick", function(e, cell){
+            const target = e.target.closest('button');
+            if (target && target.dataset.resId) {
+                const resId = target.dataset.resId;
+                const action = target.dataset.action;
+
+                if (action === 'network') {
+                    resultsContainer.innerHTML = '';
+                    resultsContainer.appendChild(createCaHeader(`Network for Resource ${resId}`, renderConstrainedResourcesList));
+                    fetchResourceNetworkGraph(resId, `Network for ${resId}`, resultsContainer);
+                } else if (action === 'timephase') {
+                    renderResourceTimePhase(resId);
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error("Error fetching constrained resources:", error);
+        contentContainer.innerHTML = `<p class="text-red-500">An error occurred while fetching data.</p>`;
+    }
+}
+
+
+async function renderBottleneckSkusTable() {
+    resultsContainer.innerHTML = '';
+    resultsContainer.appendChild(createCaHeader("Bottleneck SKUs", renderBottleneckView));
+
+    const contentContainer = document.createElement('div');
+    contentContainer.className = 'px-2';
+    resultsContainer.appendChild(contentContainer);
+    contentContainer.innerHTML = `<div class="flex justify-center items-center p-8"><i class="fas fa-spinner fa-spin fa-2x text-gray-400"></i></div>`;
+    
+    try {
+        const response = await fetch('/api/constraints/bottleneck-skus');
+        const data = await response.json();
+        contentContainer.innerHTML = '';
+
+        if (!data || data.length === 0) {
+            contentContainer.innerHTML = `<p class="text-gray-500">No bottleneck SKUs found.</p>`;
+            return;
+        }
+
+        const tableContainer = document.createElement('div');
+        tableContainer.className = 'tabulator-creative';
+        contentContainer.appendChild(tableContainer);
+        
+        new Tabulator(tableContainer, {
+            data: data.map(n => n.properties),
+            layout: "fitDataStretch",
+            columns: [
+                { title: "SKU ID", field: "sku_id" },
+                { title: "Item", field: "item" },
+                { title: "Location", field: "loc" },
+                { title: "Total Demand", field: "total_demand_qty", hozAlign: "right" },
+            ],
+        });
+
+    } catch (error) {
+        console.error("Error fetching bottleneck SKUs:", error);
+        contentContainer.innerHTML = `<p class="text-red-500">An error occurred while fetching data.</p>`;
+    }
+}
+
+
+function renderOrderDetails(details, container) {
+    container.innerHTML = '';
+    if (!details) {
+        container.innerHTML = `<p class="text-gray-500">Order not found.</p>`;
+        return;
+    }
+    const tableContainer = document.createElement('div');
+    tableContainer.className = 'tabulator-creative';
+    container.appendChild(tableContainer);
+    const columns = Object.keys(details).map(key => ({
+        title: key.replace(/_/g, ' '), field: key, headerHozAlign: "center", hozAlign: "center", resizable: true, headerSort: false,
+    }));
+    new Tabulator(tableContainer, { data: [details], columns: columns, layout: "fitDataStretch" });
+}
+
+function renderConstraintList(constraints, container) {
+    if (!constraints || constraints.length === 0) {
+        container.innerHTML = `<p class="text-gray-500">No Constraints linked to the order.</p>`;
+        return;
+    }
+    let html = '<ul class="space-y-3">';
+    constraints.forEach(constraint => {
+        const utilPercent = (constraint.utilization * 100).toFixed(0);
+        html += `<li class="p-3 bg-red-50 border border-red-200 rounded-lg"><p class="text-red-700">Resource <code class="text-sm bg-red-200 p-1 rounded">${constraint.resourceId}</code> was <strong class="font-bold">${utilPercent}% utilized</strong> in Week ${constraint.week}.</p></li>`;
+    });
+    html += '</ul>';
+    container.innerHTML = html;
+}
+
+// --- Main initialization function ---
+export async function initConstraintAnalysis() {
+    cardsContainer.innerHTML = `<div class="flex justify-center items-center p-8"><i class="fas fa-spinner fa-spin fa-2x text-gray-400"></i></div>`;
+    resultsContainer.innerHTML = ''; 
+
+    try {
+        const response = await fetch('/api/constraints/summary');
+        const summaryData = await response.json();
+        
+        renderConstraintCards(summaryData);
+        renderImpactedDemandsTable(); 
+    } catch (error) {
+        console.error("Error fetching constraints summary:", error);
+        cardsContainer.innerHTML = `<p class="text-red-500">Could not load constraint cards.</p>`;
+    }
+}
+
+function renderConstraintCards(summaryData) {
+    const totalBottlenecks = (summaryData.constrainedResourceCount || 0) + (summaryData.bottleneckSkusCount || 0);
+    
+    cardsContainer.innerHTML = `
+        <div id="ca-card-bottlenecks" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
+            <p class="text-sm font-medium text-gray-500 uppercase">Bottlenecks</p>
+            <p class="text-2xl font-bold text-yellow-500">${totalBottlenecks}</p>
+        </div>
+        <div id="ca-card-impacted-demands" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
+            <p class="text-sm font-medium text-gray-500 uppercase">Impacted Demands</p>
+            <p class="text-2xl font-bold text-orange-500">${summaryData.impactedDemandsCount.toLocaleString()}-${(summaryData.impactedDemandsQty || 0).toLocaleString()}</p>
+        </div>
+        <div id="ca-card-order-search" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
+            <p class="text-sm font-medium text-gray-500 uppercase">Order Search</p>
+            <p class="text-2xl font-bold text-gray-800">Analyze</p>
+        </div>
+        <div id="ca-card-demand-search" class="bg-white rounded-xl shadow-lg p-4 cursor-pointer hover:shadow-2xl transition-shadow duration-300">
+            <p class="text-sm font-medium text-gray-500 uppercase">Demand Search</p>
+            <p class="text-2xl font-bold text-gray-800">Analyze</p>
+        </div>
+    `;
+
+    document.getElementById('ca-card-impacted-demands').addEventListener('click', renderImpactedDemandsTable);
+    document.getElementById('ca-card-order-search').addEventListener('click', renderOrderSearchUI);
+    document.getElementById('ca-card-bottlenecks').addEventListener('click', () => renderBottleneckView(summaryData));
+    document.getElementById('ca-card-demand-search').addEventListener('click', renderDemandSearchUI);
+}
+
+--- END OF FILE: ../ui/constraintAnalysis.js ---
+
+
+--- START OF FILE: ../ui/dashboard.js ---
+// ui/dashboard.js
+
+import { planConfig } from '../config.js';
+import { renderNetworkGraph } from './bomViewer.js';
+
+let lastTableRenderFunction = null;
+
+// This helper function creates the popup for managing columns
+export function createColumnManagerPopup(table, settingsButton) {
+    // Close any existing popups first
+    document.querySelectorAll('.column-manager-popup').forEach(p => p.remove());
+
+    const popup = document.createElement('div');
+    popup.className = 'column-manager-popup';
+    
+    // Temporarily append to measure its width, then position it
+    popup.style.visibility = 'hidden';
+    document.body.appendChild(popup);
+    const popupWidth = popup.offsetWidth;
+    
+    const btnRect = settingsButton.getBoundingClientRect();
+    let leftPos = btnRect.right + window.scrollX - popupWidth;
+    if (leftPos < 10) { // Check if it's going off the left edge
+        leftPos = 10;
+    }
+    popup.style.top = `${btnRect.bottom + window.scrollY + 5}px`;
+    popup.style.left = `${leftPos}px`;
+    popup.style.visibility = 'visible';
+
+    popup.innerHTML = `<h4>Configure Columns</h4>`;
+    const list = document.createElement('ul');
+
+    let draggedItem = null;
+
+    table.getColumns().forEach(column => {
+        const item = document.createElement('li');
+        item.draggable = true;
+        item.dataset.field = column.getField();
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = column.isVisible();
+        checkbox.onchange = () => {
+            if (checkbox.checked) {
+                column.show();
+            } else {
+                column.hide();
+            }
+        };
+
+        const label = document.createElement('span');
+        label.textContent = column.getDefinition().title;
+        
+        item.appendChild(checkbox);
+        item.appendChild(label);
+        list.appendChild(item);
+
+        // Drag and Drop events for reordering
+        item.addEventListener('dragstart', () => {
+            draggedItem = item;
+            setTimeout(() => item.classList.add('dragging'), 0);
+        });
+        item.addEventListener('dragend', () => {
+            setTimeout(() => {
+                if (draggedItem) {
+                    draggedItem.classList.remove('dragging');
+                }
+                draggedItem = null;
+            }, 0);
+        });
+        item.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            const afterElement = [...list.querySelectorAll('li:not(.dragging)')].reduce((closest, child) => {
+                const box = child.getBoundingClientRect();
+                const offset = e.clientY - box.top - box.height / 2;
+                return (offset < 0 && offset > closest.offset) ? { offset: offset, element: child } : closest;
+            }, { offset: Number.NEGATIVE_INFINITY }).element;
+            
+            if (afterElement == null) {
+                list.appendChild(draggedItem);
+            } else {
+                list.insertBefore(draggedItem, afterElement);
+            }
+            
+            const originalColumnDefs = table.getColumnDefinitions();
+            const columnDefMap = originalColumnDefs.reduce((map, col) => {
+                map[col.field] = col;
+                return map;
+            }, {});
+            
+            const newOrderOfFields = [...list.querySelectorAll('li')].map(li => li.dataset.field);
+            const newColumnDefs = newOrderOfFields.map(field => columnDefMap[field]);
+
+            table.setColumns(newColumnDefs);
+        });
+    });
+
+    popup.appendChild(list);
+
+    // Close popup if clicking outside
+    setTimeout(() => {
+        document.addEventListener('click', function closeHandler(e) {
+            if (!popup.contains(e.target) && e.target !== settingsButton) {
+                popup.remove();
+                document.removeEventListener('click', closeHandler);
+            }
+        });
+    }, 0);
+}
+
+
+function createHeaderWithBackButton(title, backFunction, tableInstance = null) {
+    const header = document.createElement('div');
+    header.className = 'flex justify-between items-center mb-4';
+    
+    const titleEl = document.createElement('h2');
+    titleEl.className = 'text-xl font-bold text-gray-800';
+    titleEl.textContent = title;
+    
+    const buttonGroup = document.createElement('div');
+    buttonGroup.className = 'flex items-center space-x-2';
+
+    // Add settings button if a table instance is provided
+    if (tableInstance) {
+        const settingsButton = document.createElement('button');
+        settingsButton.className = 'flex items-center p-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors';
+        settingsButton.title = 'Configure Columns';
+        settingsButton.innerHTML = `<i class="fas fa-cog"></i>`;
+        settingsButton.onclick = (e) => {
+            e.stopPropagation();
+            createColumnManagerPopup(tableInstance, settingsButton);
+        };
+        buttonGroup.appendChild(settingsButton);
+    }
+
+    if (backFunction) {
+        const backButton = document.createElement('button');
+        backButton.className = 'flex items-center p-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors';
+        backButton.title = 'Back';
+        backButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" /></svg>`;
+        backButton.addEventListener('click', backFunction);
+        buttonGroup.appendChild(backButton);
+    }
+    
+    header.appendChild(titleEl);
+    header.appendChild(buttonGroup);
+    return header;
+}
+
+function createSkuTable(title, data, messageIfEmpty, backFunction, showDashboardContent) {
+    const resultsContainer = document.getElementById('results-container');
+    const renderFunc = () => {
+        lastTableRenderFunction = renderFunc;
+        resultsContainer.innerHTML = '';
+
+        if (!data || data.length === 0) {
+            resultsContainer.appendChild(createHeaderWithBackButton(title, backFunction));
+            resultsContainer.innerHTML += `<p class="text-gray-500">${messageIfEmpty}</p>`;
+            return;
+        }
+
+        const tableContainer = document.createElement('div');
+        tableContainer.className = 'tabulator-creative';
+
+        const tableData = data.map(node => node.properties);
+        const allKeys = new Set(data.flatMap(node => Object.keys(node.properties)));
+        const keysToDisplay = Array.from(allKeys).filter(key => key !== 'shortest_lead_time');
+        const sortedKeys = keysToDisplay.sort((a, b) => {
+            const order = ['sku_id', 'item', 'loc'];
+            const aIndex = order.indexOf(a);
+            const bIndex = order.indexOf(b);
+            if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+            if (aIndex !== -1) return -1;
+            if (bIndex !== -1) return 1;
+            return a.localeCompare(b);
+        });
+
+        const columns = sortedKeys.map(key => {
+            const columnDef = {
+                title: key.replace(/_/g, ' '),
+                field: key,
+                headerHozAlign: "center",
+                hozAlign: "center",
+                resizable: true,
+                headerSort: true,
+            };
+
+            const buttonFormatter = (cell, text, style, action) => {
+                const value = cell.getValue();
+                if (!value || value <= 0) return `<span>${value || 0}</span>`;
+
+                const skuId = cell.getRow().getData().sku_id;
+                const container = document.createElement("div");
+                container.classList.add("flex", "items-center", "justify-center", "space-x-2");
+                container.innerHTML = `<span>${value}</span>`;
+                
+                const button = document.createElement("button");
+                button.className = `px-2 py-1 text-white rounded-lg text-xs ${style}`;
+                button.dataset.skuId = skuId;
+                button.textContent = text;
+                button.onclick = (e) => {
+                    e.stopPropagation();
+                    action(skuId, showDashboardContent);
+                };
+                container.appendChild(button);
+                return container;
+            };
+
+            if (key === 'sku_id') {
+                columnDef.formatter = function(cell) {
+                    const skuId = cell.getValue();
+                    const container = document.createElement("div");
+                    container.classList.add("flex", "items-center", "justify-center", "space-x-2");
+                    container.innerHTML = `<span>${skuId}</span>`;
+                    
+                    const button = document.createElement("button");
+                    button.className = "px-2 py-1 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600";
+                    button.dataset.skuId = skuId;
+                    button.textContent = "Show Network";
+                    button.onclick = (e) => {
+                        e.stopPropagation();
+                        fetch('http://127.0.0.1:5000/api/network-graph', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sku_id: skuId }) })
+                            .then(r => r.json())
+                            .then(d => {
+                                const networkTitle = `Network for ${skuId}`;
+                                resultsContainer.innerHTML = '';
+                                resultsContainer.appendChild(createHeaderWithBackButton(networkTitle, renderFunc));
+                                renderNetworkGraph(skuId, d, networkTitle, resultsContainer, null);
+                            });
+                        showDashboardContent(resultsContainer);
+                    };
+                    container.appendChild(button);
+                    return container;
+                };
+            } 
+            else if (key === 'cust_demand_qty') {
+                columnDef.formatter = cell => buttonFormatter(cell, "Show CO", "bg-red-500 hover:bg-red-600", renderAffectedCustOrdersForSku);
+            } else if (key === 'fcst_demand_qty') {
+                columnDef.formatter = cell => buttonFormatter(cell, "Show FO", "bg-orange-500 hover:bg-orange-600", renderAffectedFcstOrdersForSku);
+            }
+            return columnDef;
+        });
+
+        resultsContainer.appendChild(tableContainer);
+        const table = new Tabulator(tableContainer, {
+            data: tableData,
+            columns: columns,
+            layout: "fitDataStretch",
+            movableColumns: true,
+            classes: "tabulator-creative",
+            persistence: {
+                sort: true,
+                columns: true,
+            },
+            persistenceID: `dashboard-table-${title.replace(/\s+/g, '-')}`,
+        });
+        
+        resultsContainer.prepend(createHeaderWithBackButton(title, backFunction, table));
+    };
+    renderFunc();
+}
+
+function createOrderTable(title, data, messageIfEmpty, backFunction) {
+    const resultsContainer = document.getElementById('results-container');
+    const renderFunc = () => {
+        lastTableRenderFunction = renderFunc;
+        resultsContainer.innerHTML = '';
+        
+        if (!data || data.length === 0) {
+            resultsContainer.appendChild(createHeaderWithBackButton(title, backFunction));
+            resultsContainer.innerHTML += `<p class="text-gray-500">${messageIfEmpty}</p>`;
+            return;
+        }
+        
+        const tableContainer = document.createElement('div');
+        tableContainer.className = 'tabulator-creative';
+
+        const tableData = data.map(record => record.properties.full_record);
+        
+        const customerOrderSequence = ['OrderID', 'Item', 'Loc', 'RGID', 'CGID', 'Delivery Date', 'Ship date WW', 'Ship Date'];
+        const forecastOrderSequence = ['Seqnum', 'Item', 'ItemClass', 'U CAPACITY CORRIDOR', 'Loc', 'Dmd Group', 'Cust Tier', 'Priority', 'Intel WW', 'Qty', 'Descr'];
+
+        let preferredOrder = [];
+        if (title.toLowerCase().includes('customer')) {
+            preferredOrder = customerOrderSequence;
+        } else if (title.toLowerCase().includes('forecast')) {
+            preferredOrder = forecastOrderSequence;
+        }
+
+        const allKeys = Object.keys(tableData[0]);
+        const preferredKeysInOrder = preferredOrder.filter(key => allKeys.includes(key));
+        const remainingKeys = allKeys
+            .filter(key => !preferredOrder.includes(key))
+            .sort((a, b) => a.localeCompare(b));
+        
+        const finalKeyOrder = [...preferredKeysInOrder, ...remainingKeys];
+        
+        const columns = finalKeyOrder.map(key => ({
+            title: key.replace(/_/g, ' '),
+            field: key,
+            headerHozAlign: "center",
+            hozAlign: "center",
+            resizable: true,
+            headerSort: true,
+        }));
+        
+        resultsContainer.appendChild(tableContainer);
+        const table = new Tabulator(tableContainer, {
+            data: tableData,
+            columns: columns,
+            layout: "fitDataStretch",
+            movableColumns: true,
+            classes: "tabulator-creative",
+            persistence: {
+                sort: true,
+                columns: true,
+            },
+            persistenceID: `dashboard-table-${title.replace(/\s+/g, '-')}`,
+        });
+        
+        resultsContainer.prepend(createHeaderWithBackButton(title, backFunction, table));
+    };
+    renderFunc();
+}
+
+const renderAffectedCustOrdersForSku = (skuId, showDashboardContent) => {
+    fetch('http://127.0.0.1:5000/api/affected-cust-orders-by-sku', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sku_id: skuId })
+    })
+    .then(r => r.json())
+    .then(d => { 
+        createOrderTable(`Customer Orders for ${skuId}`, d, 'No affected customer orders found.', lastTableRenderFunction); 
+        showDashboardContent(document.getElementById('results-container')); 
+    });
+};
+
+const renderAffectedFcstOrdersForSku = (skuId, showDashboardContent) => {
+    fetch('http://127.0.0.1:5000/api/affected-fcst-orders-by-sku', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sku_id: skuId })
+    })
+    .then(r => r.json())
+    .then(d => { 
+        createOrderTable(`Forecast Orders for ${skuId}`, d, 'No affected forecast orders found.', lastTableRenderFunction); 
+        showDashboardContent(document.getElementById('results-container')); 
+    });
+};
+
+const setCardsState = (isExpanded) => {
+    const mainCardsContainer = document.getElementById('main-cards-container');
+    const toggleCardsBtn = document.getElementById('toggle-cards-btn');
+    const collapseIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" /></svg>`;
+    const expandIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" /></svg>`;
+
+    if (isExpanded) {
+        mainCardsContainer.classList.remove('hidden');
+        toggleCardsBtn.innerHTML = collapseIcon;
+        localStorage.setItem('cardsState', 'expanded');
+    } else {
+        mainCardsContainer.classList.add('hidden');
+        toggleCardsBtn.innerHTML = expandIcon;
+        localStorage.setItem('cardsState', 'collapsed');
+    }
+};
+
+export function fetchDashboardData(startDate = null, endDate = null) {
+    if (startDate && endDate) {
+        console.log(`Fetching dashboard data for quarter: ${startDate} to ${endDate}`);
+    } else {
+        console.log("Fetching all dashboard data (no quarter filter).");
+    }
+
+    fetch('http://127.0.0.1:5000/api/dashboard')
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                console.error("Error from dashboard API:", data.error);
+                return; 
+            }
+
+            document.getElementById('total-demand-at-risk').textContent = `$${(data.totalDemandAtRisk || 0).toLocaleString()}`;
+            const formattedQty = (data.affectedOrdersQty || 0).toLocaleString();
+            document.getElementById('affected-orders').textContent = `${(data.affectedOrdersCount || 0).toLocaleString()} - ${formattedQty}`;
+            const formattedCustQty = (data.affectedCustOrdersQty || 0).toLocaleString();
+            document.getElementById('cust-orders-count').textContent = `${(data.affectedCustOrdersCount || 0).toLocaleString()} - ${formattedCustQty}`;
+            const formattedFcstQty = (data.affectedFcstOrdersQty || 0).toLocaleString();
+            document.getElementById('fcst-orders-count').textContent = `${(data.affectedFcstOrdersCount || 0).toLocaleString()} - ${formattedFcstQty}`;
+            document.getElementById('broken-networks').textContent = (data.brokenSkusCount || 0).toLocaleString();
+            document.getElementById('broken-skus-count').textContent = (data.brokenSkusCount || 0).toLocaleString();
+            document.getElementById('broken-fg-networks-count').textContent = (data.brokenFgNetworksCount || 0).toLocaleString();
+        })
+        .catch(error => console.error('Error fetching dashboard data:', error));
+}
+
+let isQuarterFilterExpanded = false;
+
+function generateQuarters(startDateString, count) {
+    const quarters = [];
+    const startDate = new Date(startDateString + 'T00:00:00Z');
+    
+    const startMonth = startDate.getUTCMonth();
+    const startQuarterMonth = Math.floor(startMonth / 3) * 3;
+    const currentDate = new Date(Date.UTC(startDate.getUTCFullYear(), startQuarterMonth, 1));
+
+    for (let i = 0; i < count; i++) {
+        const year = currentDate.getUTCFullYear();
+        const quarterNum = Math.floor(currentDate.getUTCMonth() / 3) + 1;
+        
+        const qStartDate = new Date(Date.UTC(year, (quarterNum - 1) * 3, 1));
+        const qEndDate = new Date(Date.UTC(year, quarterNum * 3, 0));
+
+        quarters.push({
+            name: `Q${quarterNum}`,
+            year: year,
+            startDate: qStartDate.toISOString().split('T')[0],
+            endDate: qEndDate.toISOString().split('T')[0]
+        });
+        
+        currentDate.setUTCMonth(currentDate.getUTCMonth() + 3);
+    }
+    return quarters;
+}
+
+function renderActiveQuarterDisplay() {
+    const quarterFilterContainer = document.getElementById('quarter-filter-container');
+    const activeBtn = quarterFilterContainer.querySelector('.active');
+    const activeDisplay = document.createElement('div');
+    activeDisplay.className = 'active-display';
+
+    if (activeBtn.dataset.filterType === 'all') {
+        activeDisplay.innerHTML = `<button class="quarter-filter-btn active font-semibold py-1 px-3 rounded-md text-sm w-full text-left">ALL</button>`;
+    } else {
+        const year = new Date(activeBtn.dataset.startDate + 'T00:00:00Z').getUTCFullYear();
+        activeDisplay.innerHTML = `
+            <span class="year-label font-bold text-gray-500 text-sm mr-1">'${year.toString().substring(2)}</span>
+            <button class="quarter-filter-btn active font-semibold py-1 px-3 rounded-md text-sm">${activeBtn.textContent}</button>
+        `;
+    }
+    
+    const existingDisplay = quarterFilterContainer.querySelector('.active-display');
+    if (existingDisplay) {
+        existingDisplay.remove();
+    }
+    quarterFilterContainer.prepend(activeDisplay);
+}
+
+function renderQuarterFilterBar() {
+    const quarterFilterContainer = document.getElementById('quarter-filter-container');
+    quarterFilterContainer.innerHTML = '';
+    let currentYear = null;
+
+    const allButton = document.createElement('button');
+    allButton.textContent = 'ALL';
+    allButton.className = 'quarter-filter-btn active font-semibold py-1 px-3 rounded-md text-sm';
+    allButton.dataset.filterType = 'all';
+    quarterFilterContainer.appendChild(allButton);
+
+    const quarters = generateQuarters(planConfig.planStartDate, planConfig.numberOfQuarters);
+    quarters.forEach(q => {
+        if (q.year !== currentYear) {
+            currentYear = q.year;
+            const yearLabel = document.createElement('span');
+            yearLabel.className = 'font-bold text-gray-500 text-sm ml-2 mr-1 w-full md:w-auto';
+            yearLabel.textContent = `'${currentYear.toString().substring(2)}`;
+            quarterFilterContainer.appendChild(yearLabel);
+        }
+
+        const qButton = document.createElement('button');
+        qButton.textContent = q.name;
+        qButton.className = 'quarter-filter-btn font-semibold py-1 px-3 rounded-md text-sm';
+        qButton.dataset.startDate = q.startDate;
+        qButton.dataset.endDate = q.endDate;
+        qButton.dataset.filterType = 'quarter';
+        quarterFilterContainer.appendChild(qButton);
+    });
+    renderActiveQuarterDisplay();
+}
+
+function toggleQuarterFilter(expand) {
+    const quarterFilterBar = document.getElementById('quarter-filter-bar');
+    isQuarterFilterExpanded = expand;
+    if (isQuarterFilterExpanded) {
+        quarterFilterBar.classList.add('expanded');
+        quarterFilterBar.classList.remove('collapsed');
+    } else {
+        quarterFilterBar.classList.remove('expanded');
+        quarterFilterBar.classList.add('collapsed');
+        renderActiveQuarterDisplay();
+    }
+}
+
+export function initDashboard(showDashboardContent) {
+    const toggleCardsBtn = document.getElementById('toggle-cards-btn');
+    const mainCardsContainer = document.getElementById('main-cards-container');
+    const quarterFilterBar = document.getElementById('quarter-filter-bar');
+    const quarterFilterContainer = document.getElementById('quarter-filter-container');
+
+    // --- Main Cards Toggle Initialization ---
+    toggleCardsBtn.addEventListener('click', () => {
+        const isCurrentlyExpanded = !mainCardsContainer.classList.contains('hidden');
+        setCardsState(!isCurrentlyExpanded);
+    });
+    const savedCardsState = localStorage.getItem('cardsState');
+    setCardsState(savedCardsState !== 'collapsed');
+
+    // --- Quarter Filter Initialization ---
+    renderQuarterFilterBar();
+    
+    quarterFilterBar.addEventListener('click', (event) => {
+        if (!isQuarterFilterExpanded) {
+            toggleQuarterFilter(true);
+            return;
+        }
+
+        const clickedButton = event.target.closest('button');
+        if (clickedButton && !clickedButton.classList.contains('active')) {
+            quarterFilterContainer.querySelectorAll('button').forEach(btn => btn.classList.remove('active'));
+            clickedButton.classList.add('active');
+
+            const { filterType, startDate, endDate } = clickedButton.dataset;
+            fetchDashboardData(filterType === 'all' ? null : startDate, filterType === 'all' ? null : endDate);
+            
+            setTimeout(() => toggleQuarterFilter(false), 100);
+        }
+    });
+
+    document.addEventListener('click', (event) => {
+        if (isQuarterFilterExpanded && !quarterFilterBar.contains(event.target)) {
+            toggleQuarterFilter(false);
+        }
+    });
+
+    // --- Drill-down Card Event Listeners ---
+    const brokenNetworksCard = document.getElementById('broken-networks-card');
+    const affectedOrdersCard = document.getElementById('affected-orders-card');
+    const brokenSkuCard = document.getElementById('broken-sku-card');
+    const brokenDemandNetworkCard = document.getElementById('broken-demand-network-card');
+    const custOrdersCard = document.getElementById('cust-orders-card');
+    const fcstOrdersCard = document.getElementById('fcst-orders-card');
+    
+    const resultsContainer = document.getElementById('results-container');
+    const brokenNetworksSection = document.getElementById('broken-networks-section');
+    const affectedOrdersSection = document.getElementById('affected-orders-section');
+    
+    brokenNetworksCard.addEventListener('click', () => showDashboardContent(brokenNetworksSection));
+    affectedOrdersCard.addEventListener('click', () => showDashboardContent(affectedOrdersSection));
+    
+    const renderBrokenSkus = () => fetch('http://127.0.0.1:5000/api/broken-networks').then(r => r.json()).then(d => { createSkuTable('Broken SKUs', d, 'No broken SKUs found.', () => showDashboardContent(brokenNetworksSection), showDashboardContent); showDashboardContent(resultsContainer); });
+    const renderBrokenDemand = () => fetch('http://127.0.0.1:5000/api/broken-demand-networks').then(r => r.json()).then(d => { createSkuTable('Broken Finished Goods', d, 'No broken FG networks found.', () => showDashboardContent(brokenNetworksSection), showDashboardContent); showDashboardContent(resultsContainer); });
+    const renderAffectedCustOrders = () => fetch('http://127.0.0.1:5000/api/affected-cust-orders').then(r => r.json()).then(d => { createOrderTable('Affected Customer Orders', d, 'No affected customer orders found.', () => showDashboardContent(affectedOrdersSection)); showDashboardContent(resultsContainer); });
+    const renderAffectedFcstOrders = () => fetch('http://127.0.0.1:5000/api/affected-fcst-orders').then(r => r.json()).then(d => { createOrderTable('Affected Forecast Orders', d, 'No affected forecast orders found.', () => showDashboardContent(affectedOrdersSection)); showDashboardContent(resultsContainer); });
+    
+    brokenSkuCard.addEventListener('click', renderBrokenSkus);
+    brokenDemandNetworkCard.addEventListener('click', renderBrokenDemand);
+    custOrdersCard.addEventListener('click', renderAffectedCustOrders);
+    fcstOrdersCard.addEventListener('click', renderAffectedFcstOrders);
+}
+
+--- END OF FILE: ../ui/dashboard.js ---
+
+
+--- START OF FILE: ../ui/news.js ---
+// ui/news.js
+
+const newsMatrixSection = document.getElementById('news-matrix-section');
+const kpiHeaders = ["Supply Availability", "Raw Material Cost", "Logistics & Freight Cost", "Market Demand", "OTIF"];
+
+const KPI_BG_COLORS = {
+    Positive: 'bg-green-50',
+    Negative: 'bg-red-50',
+    Neutral: 'bg-white'
+};
+
+function createKpiCellHtml(impact) {
+    const safeImpact = (impact === 'Positive' || impact === 'Negative') ? impact : 'Neutral';
+    const indicatorClass = `indicator-${safeImpact.toLowerCase()}`;
+    
+    if (safeImpact === 'Neutral') {
+        return `<span class="indicator-neutral">-</span>`;
+    }
+    
+    const path = safeImpact === 'Positive' ? 'M12 4l8 8H4l8-8z' : 'M12 20l-8-8h16l-8 8z';
+    return `<svg class="h-4 w-4 inline-block ${indicatorClass}" fill="currentColor" viewBox="0 0 24 24">
+                <path d="${path}"></path>
+            </svg>`;
+}
+
+function renderNewsMatrix(allArticles) {
+    newsMatrixSection.innerHTML = '';
+    if (!allArticles || allArticles.length === 0) {
+        newsMatrixSection.innerHTML = `<p class="text-gray-500 p-4">No news articles found.</p>`;
+        return;
+    }
+
+    const table = document.createElement('table');
+    table.id = 'news-matrix-table';
+    table.className = 'min-w-full';
+    
+    const thead = document.createElement('thead');
+    thead.innerHTML = `<tr>
+        <th class="article-column">Article</th>
+        <th class="category-column">Category</th>
+        ${kpiHeaders.map(name => `<th class="kpi-column">${name}</th>`).join('')}
+    </tr>`;
+    
+    const tbody = document.createElement('tbody');
+    allArticles.forEach((article, index) => {
+        const row = document.createElement('tr');
+        row.id = `article-row-${index}`;
+        
+        const articleCell = document.createElement('td');
+        articleCell.className = 'article-column article-title-cell';
+        articleCell.innerHTML = `<a href="${article.url}" target="_blank" rel="noopener noreferrer">${article.title}</a>`;
+        row.appendChild(articleCell);
+
+        const categoryCell = document.createElement('td');
+        categoryCell.className = 'category-column';
+        categoryCell.textContent = article.category.charAt(0).toUpperCase() + article.category.slice(1);
+        row.appendChild(categoryCell);
+
+        kpiHeaders.forEach(header => {
+            const kpiCell = document.createElement('td');
+            kpiCell.className = 'kpi-cell kpi-column';
+            kpiCell.id = `kpi-placeholder-matrix-${index}-${header.replace(/\s+/g, '')}`;
+            kpiCell.innerHTML = `<div class="kpi-loader-small"></div>`;
+            row.appendChild(kpiCell);
+        });
+
+        tbody.appendChild(row);
+    });
+
+    table.appendChild(thead);
+    table.appendChild(tbody);
+    newsMatrixSection.appendChild(table);
+}
+
+function updateMatrixCells(matrixIndex, kpiData) {
+    kpiHeaders.forEach(header => {
+        const matrixCell = document.getElementById(`kpi-placeholder-matrix-${matrixIndex}-${header.replace(/\s+/g, '')}`);
+            if (matrixCell) {
+                const impact = kpiData[header] || 'Neutral';
+                matrixCell.className = `kpi-cell kpi-column ${KPI_BG_COLORS[impact]}`;
+                matrixCell.innerHTML = createKpiCellHtml(impact);
+            }
+    });
+}
+
+async function fetchAndDisplayNews() {
+    try {
+        const response = await fetch('http://127.0.0.1:5000/api/supply-chain-news');
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const newsData = await response.json();
+        
+        const allArticles = [];
+        let matrixIndexCounter = 0;
+        for (const category in newsData) {
+            newsData[category].forEach(article => {
+                allArticles.push({
+                    ...article,
+                    category: category,
+                    matrixIndex: matrixIndexCounter
+                });
+                matrixIndexCounter++;
+            });
+        }
+
+        renderNewsMatrix(allArticles);
+
+        allArticles.forEach(article => {
+            fetch('http://127.0.0.1:5000/api/analyze-article', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ article: article })
+            })
+            .then(res => res.json())
+            .then(kpiData => {
+                const allNeutral = Object.values(kpiData).every(val => val === 'Neutral');
+
+                if (allNeutral) {
+                    const row = document.getElementById(`article-row-${article.matrixIndex}`);
+                    if (row) row.style.display = 'none';
+                } else {
+                    updateMatrixCells(article.matrixIndex, kpiData);
+                }
+            })
+            .catch(err => console.error("Error analyzing article:", article.title, err));
+        });
+
+    } catch (error) {
+        console.error('Error fetching or displaying news:', error);
+        newsMatrixSection.innerHTML = `<div class="p-4"><h4 class="font-bold text-gray-800">News Feed</h4><p class="text-sm text-red-500">Could not load news feed. Please ensure the backend server is running.</p></div>`;
+    }
+}
+
+export function initNews() {
+    fetchAndDisplayNews();
+}
+
+--- END OF FILE: ../ui/news.js ---
+
+
+--- START OF FILE: ../ui/sidebar.js ---
+// ui/sidebar.js
+
+/**
+ * Sets the collapsed or expanded state of the sidebar and main content area.
+ * @param {boolean} isExpanded - True to expand the sidebar, false to collapse.
+ */
+const setSidebarState = (isExpanded) => {
+    const sidebar = document.getElementById('sidebar');
+    const mainContent = document.getElementById('main-content');
+
+    if (isExpanded) {
+        sidebar.classList.add('expanded');
+        mainContent.classList.add('expanded');
+        localStorage.setItem('sidebarState', 'expanded');
+    } else {
+        sidebar.classList.remove('expanded');
+        mainContent.classList.remove('expanded');
+        localStorage.setItem('sidebarState', 'collapsed');
+    }
+};
+
+/**
+ * Initializes all sidebar functionality, including event listeners and loading the saved state.
+ */
+export function initSidebar() {
+    const logoFull = document.getElementById('logo-full');
+    const logoShort = document.getElementById('logo-short');
+    
+    logoFull.addEventListener('click', () => setSidebarState(false));
+    logoShort.addEventListener('click', () => setSidebarState(true));
+
+    const savedState = localStorage.getItem('sidebarState');
+    if (savedState === 'expanded') {
+        setSidebarState(true);
+    } else {
+        setSidebarState(false);
+    }
+}
+
+--- END OF FILE: ../ui/sidebar.js ---
+
+
+--- START OF FILE: ../routes/bom_viewer.py ---
+# routes/bom_viewer.py
+from flask import Blueprint, jsonify, request
+import os
+from utils.neo4j_handler import get_db, serialize_path
+
+bom_viewer_bp = Blueprint('bom_viewer_bp', __name__)
+
+@bom_viewer_bp.route('/api/sku-details', methods=['POST'])
+def get_sku_details():
+    try:
+        data = request.json
+        sku_id = data.get('sku_id')
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            result = session.run("MATCH (s:SKU {sku_id: $sku_id}) RETURN s", sku_id=sku_id).single()
+            return jsonify({'found': True, 'properties': dict(result['s'])}) if result else jsonify({'found': False})
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@bom_viewer_bp.route('/api/network-graph', methods=['POST'])
+def get_network_graph():
+    try:
+        data = request.json
+        sku_id = data.get('sku_id')
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            cypher_query = "MATCH (s:SKU {sku_id: $sku_id}) CALL(s) { WITH s OPTIONAL MATCH up = (u)-[:SOURCING|PRODUCES|CONSUMED_BY|PURCH_FROM*0..]->(s) RETURN collect(DISTINCT up) AS ups } CALL(s) { WITH s OPTIONAL MATCH down = (s)-[:SOURCING|PRODUCES|CONSUMED_BY|PURCH_FROM*0..]->(d) RETURN collect(DISTINCT down) AS downs } WITH s, [p IN ups WHERE p IS NOT NULL] + [p IN downs WHERE p IS NOT NULL] AS netPaths UNWIND netPaths AS p UNWIND nodes(p) AS n WITH s, collect(DISTINCT p) AS allPaths, collect(DISTINCT n) AS nodesInNet WITH allPaths, [n IN nodesInNet WHERE n:BOM] AS bomNodes UNWIND bomNodes AS bn OPTIONAL MATCH rp = (res:Res)-[:USES_RESOURCE]->(bn) WITH allPaths, collect(DISTINCT rp) AS resPaths WITH [p IN resPaths WHERE p IS NOT NULL] AS resPathsClean, allPaths WITH allPaths + resPathsClean AS combinedPaths UNWIND combinedPaths AS path RETURN path;"
+            result = session.run(cypher_query, sku_id=sku_id)
+            return jsonify([serialize_path(row['path']) for row in result])
+    except Exception as e:
+        return jsonify({'error': 'Internal server error.'}), 500
+
+@bom_viewer_bp.route('/api/network-with-shortest-path', methods=['POST'])
+def get_network_with_shortest_path():
+    try:
+        data = request.json
+        sku_id = data.get('sku_id')
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            full_network_query = "MATCH (s:SKU {sku_id: $sku_id}) CALL(s) { WITH s OPTIONAL MATCH up = (u)-[:SOURCING|PRODUCES|CONSUMED_BY|PURCH_FROM*0..]->(s) RETURN collect(DISTINCT up) AS ups } CALL(s) { WITH s OPTIONAL MATCH down = (s)-[:SOURCING|PRODUCES|CONSUMED_BY|PURCH_FROM*0..]->(d) RETURN collect(DISTINCT down) AS downs } WITH s, [p IN ups WHERE p IS NOT NULL] + [p IN downs WHERE p IS NOT NULL] AS netPaths UNWIND netPaths AS p UNWIND nodes(p) AS n WITH s, collect(DISTINCT p) AS allPaths, collect(DISTINCT n) AS nodesInNet WITH allPaths, [n IN nodesInNet WHERE n:BOM] AS bomNodes UNWIND bomNodes AS bn OPTIONAL MATCH rp = (res:Res)-[:USES_RESOURCE]->(bn) WITH allPaths, collect(DISTINCT rp) AS resPaths WITH [p IN resPaths WHERE p IS NOT NULL] AS resPathsClean, allPaths WITH allPaths + resPathsClean AS combinedPaths UNWIND combinedPaths AS path RETURN path;"
+            full_network_result = session.run(full_network_query, sku_id=sku_id)
+            full_network_paths = [serialize_path(row['path']) for row in full_network_result]
+            shortest_path_query = "MATCH (d:SKU {sku_id: $sku_id}) WHERE d.demand_sku = true AND coalesce(d.broken_bom,false) = false MATCH path = (srcNode)-[:CONSUMED_BY|PRODUCES|SOURCING|PURCH_FROM*1..50]->(d) WHERE (srcNode:PurchGroup OR (srcNode:SKU AND coalesce(srcNode.infinite_supply,false) = true)) AND NONE(n IN nodes(path) WHERE coalesce(n.broken_bom,false) = true) WITH d, path, head(nodes(path)) AS sourceNode, reduce(totalLT = 0, r IN relationships(path) | totalLT + coalesce(r.lead_time,0)) AS pathLeadTime WITH d, collect({p:path, src:sourceNode, leadTime:pathLeadTime}) AS allPaths WITH d, [x IN allPaths WHERE x.src:PurchGroup] AS purchPaths, [x IN allPaths WHERE NOT x.src:PurchGroup] AS skuPaths WITH d, CASE WHEN size(purchPaths) > 0 THEN purchPaths ELSE skuPaths END AS candidatePaths UNWIND candidatePaths AS cp WITH d, cp ORDER BY cp.leadTime ASC WITH d, collect(cp)[0] AS chosenPath WITH chosenPath, [n IN nodes(chosenPath.p) WHERE n:BOM] AS bomNodes UNWIND bomNodes AS bn OPTIONAL MATCH rp = (res:Res)-[:USES_RESOURCE]->(bn) WITH chosenPath, [p IN collect(DISTINCT rp) WHERE p IS NOT NULL] AS resPaths WITH resPaths + [chosenPath.p] AS allPaths UNWIND allPaths AS path RETURN path;"
+            shortest_path_result = session.run(shortest_path_query, sku_id=sku_id)
+            shortest_path_paths = [serialize_path(row['path']) for row in shortest_path_result]
+        return jsonify({'full_network': full_network_paths, 'shortest_path': shortest_path_paths})
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@bom_viewer_bp.route('/api/resource-network', methods=['POST'])
+def get_resource_network():
+    try:
+        data = request.json
+        res_id = data.get('res_id')
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            cypher_query = "MATCH (r:Res {res_id: $res_id}) OPTIONAL MATCH rb = (r)-[:USES_RESOURCE]->(b:BOM) WITH r, collect(DISTINCT rb) AS resBomPaths, collect(DISTINCT b) AS startBomNodes UNWIND startBomNodes AS sb OPTIONAL MATCH p_prod = (sb)-[:PRODUCES]->(s:SKU) WITH r, resBomPaths, collect(DISTINCT p_prod) AS bomSkuPaths, collect(DISTINCT s) AS seedSkus UNWIND seedSkus AS seed CALL(seed) { WITH seed OPTIONAL MATCH up = (u)-[:SOURCING|PRODUCES|CONSUMED_BY|PURCH_FROM*0..]->(seed) RETURN collect(DISTINCT up) AS ups } CALL(seed) { WITH seed OPTIONAL MATCH down = (seed)-[:SOURCING|PRODUCES|CONSUMED_BY|PURCH_FROM*0..]->(d) RETURN collect(DISTINCT down) AS downs } WITH r, resBomPaths, bomSkuPaths, ([p IN ups WHERE p IS NOT NULL] + [p IN downs WHERE p IS NOT NULL]) AS sPaths WITH r, resBomPaths, bomSkuPaths, collect(sPaths) AS skuPathSets WITH r, resBomPaths, bomSkuPaths, reduce(acc = [], ps IN skuPathSets | acc + ps) AS skuPaths UNWIND skuPaths AS sp UNWIND nodes(sp) AS n WITH r, resBomPaths, bomSkuPaths, skuPaths, collect(DISTINCT n) AS nodesInNet WITH r, resBomPaths, bomSkuPaths, skuPaths, [x IN nodesInNet WHERE x:BOM] AS bomInNet UNWIND bomInNet AS bn OPTIONAL MATCH r2b = (r2:Res)-[:USES_RESOURCE]->(bn) WITH resBomPaths, bomSkuPaths, skuPaths, collect(DISTINCT r2b) AS extraResPaths WITH resBomPaths + bomSkuPaths + skuPaths + extraResPaths AS allPaths UNWIND allPaths AS path WITH path WHERE path IS NOT NULL RETURN DISTINCT path;"
+            result = session.run(cypher_query, res_id=res_id)
+            return jsonify([serialize_path(row['path']) for row in result])
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+--- END OF FILE: ../routes/bom_viewer.py ---
+
+
+--- START OF FILE: ../routes/chat.py ---
+from flask import Blueprint, jsonify, request
+import os
+import re
+import google.generativeai as genai
+from utils.llm_tools import available_tools
+
+chat_bp = Blueprint('chat_bp', __name__)
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+@chat_bp.route('/api/chat', methods=['POST', 'OPTIONS'])
+def handle_chat():
+    if request.method == 'OPTIONS':
+        return '', 204
+    try:
+        if not GEMINI_API_KEY:
+            return jsonify({'response_type': 'text', 'data': "Error: GEMINI_API_KEY is not configured on the server."}), 500
+        
+        data = request.json
+        user_message = data.get('message', '')
+        history = data.get('history', [])
+                                                
+        system_instruction = (
+            "You are a helpful and expert supply chain assistant. Your primary goal is to answer user questions by using the tools provided. "
+            "You **must** use Markdown formatting in your responses to improve readability. Use lists, bold text, and tables where appropriate. "
+            "Here is a critical example of how to handle a follow-up question:\n"
+            "--- EXAMPLE START ---\n"
+            "USER: 'what are the broken skus?'\n"
+            "AI: (Calls `get_broken_networks_from_db` tool which returns a list of SKUs)\n"
+            "AI: 'Here are the top SKUs with broken networks: - 2000-231-476@SAL - 2000-321-901@SAL'\n"
+            "USER: 'summarize orders for them'\n"
+            "AI: (User said 'them', so I must look at the previous list of SKUs: ['2000-231-476@SAL', '2000-321-901@SAL']. I will now call the `get_order_summary_for_multiple_skus` tool with this list as the `sku_ids` argument.)\n"
+            "--- EXAMPLE END ---\n"
+            "If the user provides only one SKU, use the `get_order_summary_for_single_sku` tool. "
+            "If they refer to multiple SKUs from the context like in the example, you must extract them and use the `get_order_summary_for_multiple_skus` tool. "
+            "If asked to draw a network or graph, instruct the user to use the 'BOM Viewer'."
+        )
+
+        model = genai.GenerativeModel('gemini-1.5-flash', tools=list(available_tools.values()), system_instruction=system_instruction)
+                                                        
+        chat = model.start_chat(history=history, enable_automatic_function_calling=True)
+        
+        response = chat.send_message(user_message)
+        return jsonify({'response_type': 'text', 'data': response.text.replace('\\_', '_')})
+    except Exception as e:
+        return jsonify({'response_type': 'text', 'data': f"An error occurred: {e}"}), 500
+
+--- END OF FILE: ../routes/chat.py ---
+
+
+--- START OF FILE: ../routes/constraints.py ---
+# routes/constraints.py
+from flask import Blueprint, jsonify, request
+import os
+from utils.neo4j_handler import get_db
+
+constraints_bp = Blueprint('constraints_bp', __name__)
+
+@constraints_bp.route('/api/constraints/fg-search', methods=['POST'])
+def fg_search():
+    """
+    For a given SKU, gathers all demands, constrained demands, and the constraints themselves.
+    Returns a full "Health Report" for the SKU.
+    """
+    try:
+        req_data = request.json
+        item = req_data.get('item')
+        loc = req_data.get('loc')
+        sku_id = f"{item}@{loc}"
+
+        if not item or not loc:
+            return jsonify({'error': 'Item and Location are required'}), 400
+
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            query = """
+            MATCH (s:SKU {sku_id: $sku_id})
+            CALL(s) {
+                WITH s
+                MATCH (s)<-[:IS_FOR_SKU]-(d:Demand)
+                RETURN collect(d {.*, broken_bom: s.broken_bom}) AS all_demands, 
+                       count(d) AS total_demand_count, 
+                       coalesce(sum(d.qty), 0) AS total_demand_qty
+            }
+            CALL(s) {
+                WITH s
+                MATCH (s)<-[:IS_FOR_SKU]-(d:Demand)<-[:IMPACTS_DEMAND]-(c:Constraint)
+                WITH s, d, collect(properties(c)) as demand_constraints
+                WITH s, collect(d {.*, broken_bom: s.broken_bom, constraints: demand_constraints}) AS constrained_demands, 
+                     count(d) as constrained_demand_count,
+                     coalesce(sum(d.qty), 0) as constrained_demand_qty
+                MATCH (s)<-[:IS_FOR_SKU]-(d:Demand)<-[:IMPACTS_DEMAND]-(c:Constraint)
+                RETURN constrained_demands, constrained_demand_count, constrained_demand_qty, 
+                       collect(DISTINCT properties(c)) as constraints
+            }
+            RETURN s.sku_id as sku, all_demands, total_demand_count, total_demand_qty, 
+                   constrained_demands, constrained_demand_count, constrained_demand_qty, constraints
+            """
+            result = session.run(query, sku_id=sku_id).single()
+
+            if not result:
+                return jsonify({'found': False, 'sku': sku_id})
+
+            total_qty = result['total_demand_qty']
+            constrained_qty = result['constrained_demand_qty']
+            status = "Healthy"
+            if constrained_qty > 0:
+                percentage_constrained = constrained_qty / total_qty if total_qty > 0 else 0
+                if percentage_constrained >= 0.5:
+                    status = "Constrained"
+                else:
+                    status = "At Risk"
+            
+            response_data = dict(result)
+            response_data['status'] = status
+            response_data['found'] = True
+
+            return jsonify(response_data)
+
+    except Exception as e:
+        print(f"An error occurred in fg_search: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+# ## MODIFICATION START ## - This function has been simplified and corrected
+@constraints_bp.route('/api/constraints/resource-time-phase', methods=['GET'])
+def get_resource_time_phase_data():
+    """
+    Fetches all ResWeek node data for a specific constrained resource.
+    """
+    try:
+        res_id_filter = request.args.get('resId')
+        if not res_id_filter:
+            return jsonify({'error': 'resId query parameter is required'}), 400
+            
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            query = """
+            MATCH (r:Res {res_id: $resId})
+            MATCH (rw:ResWeek {res_id: $resId})
+            RETURN r.res_id AS resId, r.res_descr AS resDescr, collect(properties(rw)) AS weeklyData
+            """
+            result = session.run(query, resId=res_id_filter)
+            
+            data = [dict(record) for record in result]
+            return jsonify(data)
+    except Exception as e:
+        print(f"An error occurred in get_resource_time_phase_data: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+# ## MODIFICATION END ##
+
+@constraints_bp.route('/api/constraints/demands-for-resource-week', methods=['POST'])
+def get_demands_for_resource_week():
+    """
+    For a given resource and week, finds all demands pegged to it.
+    """
+    try:
+        req_data = request.json
+        res_id = req_data.get('resourceId')
+        week = req_data.get('week')
+
+        if not res_id or week is None:
+            return jsonify({'error': 'resourceId and week are required'}), 400
+
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            query = """
+            MATCH (d:Demand)-[p:PEGGED_TO_RESOURCE]->(r:Res {res_id: $res_id})
+            WHERE p.week = $week
+            RETURN properties(d) as demand, p.loadQty as loadQty
+            ORDER BY loadQty DESC
+            """
+            result = session.run(query, res_id=res_id, week=week)
+            data = [dict(record) for record in result]
+            return jsonify(data)
+    except Exception as e:
+        print(f"An error occurred in get_demands_for_resource_week: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@constraints_bp.route('/api/constraints/summary', methods=['GET'])
+def get_constraints_summary():
+    """Provides all summary numbers for the constraints page cards in one call."""
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            res_query = """
+            MATCH (r:Res)-[:HAS_CONSTRAINT]->(c:Constraint)
+            RETURN count(DISTINCT r) AS constrainedResourceCount
+            """
+            res_result = session.run(res_query).single()
+            constrained_res_count = res_result['constrainedResourceCount'] if res_result else 0
+
+            sku_query = "MATCH (s:SKU {bottleneck: true}) RETURN count(s) AS count"
+            sku_result = session.run(sku_query).single()
+            bottleneck_sku_count = sku_result['count'] if sku_result else 0
+
+            demands_query = """
+            MATCH (c:Constraint)-[:IMPACTS_DEMAND]->(d:Demand)
+            RETURN count(DISTINCT d) AS orderCount, sum(d.qty) AS totalQty
+            """
+            demands_result = session.run(demands_query).single()
+            
+            data = {
+                'constrainedResourceCount': constrained_res_count,
+                'bottleneckSkusCount': bottleneck_sku_count,
+                'impactedDemandsCount': demands_result.get('orderCount') or 0,
+                'impactedDemandsQty': demands_result.get('totalQty') or 0
+            }
+            return jsonify(data)
+    except Exception as e:
+        print(f"An error occurred in get_constraints_summary: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@constraints_bp.route('/api/constraints/impacted-demands', methods=['GET'])
+def get_impacted_demands():
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            query = """
+            MATCH (c:Constraint)-[:IMPACTS_DEMAND]->(d:Demand)
+            WITH d, collect(properties(c)) AS constraints
+            RETURN properties(d) AS demand, constraints
+            ORDER BY d.date
+            """
+            result = session.run(query)
+            
+            data = [dict(record) for record in result]
+            return jsonify(data)
+
+    except Exception as e:
+        print(f"An error occurred in get_impacted_demands: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@constraints_bp.route('/api/constraints/order-search', methods=['POST'])
+def search_order_constraints():
+    try:
+        data = request.json
+        order_id = data.get('orderId')
+        if not order_id:
+            return jsonify({'error': 'orderId is required'}), 400
+
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            query = """
+            MATCH (d:Demand)
+            WHERE d.orderId = $order_id OR d.seqnum = $order_id
+            OPTIONAL MATCH (d)<-[:IMPACTS_DEMAND]-(c:Constraint)
+            RETURN d, collect(c) AS constraints
+            LIMIT 1
+            """
+            result = session.run(query, order_id=order_id).single()
+
+            if not result:
+                return jsonify({'orderDetails': None, 'constraints': []})
+
+            order_details = dict(result['d'])
+            constraints = [dict(node) for node in result['constraints'] if node is not None]
+
+            return jsonify({'orderDetails': order_details, 'constraints': constraints})
+
+    except Exception as e:
+        print(f"An error occurred in search_order_constraints: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@constraints_bp.route('/api/constraints/constrained-resources', methods=['GET'])
+def get_constrained_resources():
+    """Gets resources, their constraints, and the demands impacted by each constraint."""
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            query = """
+            MATCH (r:Res)-[:HAS_CONSTRAINT]->(c:Constraint)
+            OPTIONAL MATCH (c)-[:IMPACTS_DEMAND]->(d:Demand)
+            WITH r, c, collect(properties(d)) AS demands, sum(d.qty) as totalDemandQty
+            WITH r, collect({constraint: properties(c), demands: demands, totalDemandQty: totalDemandQty}) AS constraintDetails
+            RETURN r, constraintDetails
+            ORDER BY size(constraintDetails) DESC
+            """
+            result = session.run(query)
+            
+            data = []
+            for record in result:
+                res_properties = dict(record['r'])
+                data.append({
+                    "properties": res_properties,
+                    "constraintDetails": record['constraintDetails']
+                })
+            return jsonify(data)
+    except Exception as e:
+        print(f"An error occurred in get_constrained_resources: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@constraints_bp.route('/api/constraints/bottleneck-skus', methods=['GET'])
+def get_bottleneck_skus():
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            result = session.run("MATCH (s:SKU) WHERE s.bottleneck = true RETURN s LIMIT 10")
+            return jsonify([{'id': record['s'].element_id, 'properties': dict(record['s'])} for record in result])
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+--- END OF FILE: ../routes/constraints.py ---
+
+
+--- START OF FILE: ../routes/dashboard.py ---
+# routes/dashboard.py
+from flask import Blueprint, jsonify, request
+import random
+import os
+from utils.neo4j_handler import get_db, serialize_record
+
+dashboard_bp = Blueprint('dashboard_bp', __name__)
+
+@dashboard_bp.route('/api/dashboard', methods=['GET'])
+def get_dashboard_data():
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            cust_order_query = "LOAD CSV WITH HEADERS FROM 'file:///custorder.csv' AS row WITH row, toFloat(row.Qty) AS qty WHERE trim(row.Item) <> '' AND trim(row.Loc) <> '' MATCH (s:SKU {sku_id: trim(row.Item) + '@' + trim(row.Loc)}) WHERE s.demand_sku = true AND s.broken_bom = true RETURN count(row) AS orderCount, sum(qty) AS totalQty"
+            cust_result = session.run(cust_order_query).single()
+            cust_orders_count = cust_result.get('orderCount', 0) or 0; cust_orders_qty = cust_result.get('totalQty', 0) or 0
+            
+            fcst_order_query = "LOAD CSV WITH HEADERS FROM 'file:///fcstorder.csv' AS row WITH row, toFloat(row.Qty) AS qty WHERE trim(row.Item) <> '' AND trim(row.Loc) <> '' MATCH (s:SKU {sku_id: trim(row.Item) + '@' + trim(row.Loc)}) WHERE s.demand_sku = true AND s.broken_bom = true RETURN count(row) AS orderCount, sum(qty) AS totalQty"
+            fcst_result = session.run(fcst_order_query).single()
+            fcst_orders_count = fcst_result.get('orderCount', 0) or 0; fcst_orders_qty = fcst_result.get('totalQty', 0) or 0
+            
+            total_affected_orders_count = cust_orders_count + fcst_orders_count
+            total_affected_orders_qty = cust_orders_qty + fcst_orders_qty
+            
+            broken_total_result = session.run("MATCH (s:SKU {broken_bom: true}) RETURN count(s) AS count").single()
+            broken_fg_result = session.run("MATCH (s:SKU {broken_bom: true, demand_sku: true}) RETURN count(s) AS count").single()
+            broken_skus_count = broken_total_result['count'] if broken_total_result else 0
+            broken_fg_count = broken_fg_result['count'] if broken_fg_result else 0
+    
+        data = { 
+            'totalDemandAtRisk': random.randint(100000, 999999), 
+            'affectedOrdersCount': total_affected_orders_count, 
+            'affectedOrdersQty': total_affected_orders_qty, 
+            'affectedCustOrdersCount': cust_orders_count, 
+            'affectedCustOrdersQty': cust_orders_qty, 
+            'affectedFcstOrdersCount': fcst_orders_count, 
+            'affectedFcstOrdersQty': fcst_orders_qty, 
+            'brokenSkusCount': broken_skus_count, 
+            'brokenFgNetworksCount': broken_fg_count
+        }
+        return jsonify(data)
+    except Exception as e:
+        print(f"An error occurred in get_dashboard_data: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@dashboard_bp.route('/api/broken-networks', methods=['GET'])
+def get_broken_networks():
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            result = session.run("MATCH (s:SKU) WHERE s.broken_bom = true RETURN s LIMIT 10")
+            return jsonify([{'id': record['s'].element_id, 'properties': dict(record['s'])} for record in result])
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@dashboard_bp.route('/api/broken-demand-networks', methods=['GET'])
+def get_broken_demand_networks():
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            result = session.run("MATCH (s:SKU) WHERE s.broken_bom = true AND s.demand_sku = true RETURN s LIMIT 10")
+            return jsonify([{'id': record['s'].element_id, 'properties': dict(record['s'])} for record in result])
+    except Exception as e:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@dashboard_bp.route('/api/affected-cust-orders', methods=['GET'])
+def get_affected_cust_orders():
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            query = "LOAD CSV WITH HEADERS FROM 'file:///custorder.csv' AS row WITH row, trim(row.Item) AS item, trim(row.Loc) AS loc, toFloat(row.Qty) AS qty, trim(row.Item) + '@' + trim(row.Loc) AS sku_id WHERE item <> '' AND loc <> '' MATCH (s:SKU {sku_id: sku_id}) WHERE s.demand_sku = true AND s.broken_bom = true RETURN s.sku_id AS sku_id, row AS full_record ORDER BY s.sku_id, qty DESC LIMIT 100;"
+            result = session.run(query)
+            return jsonify([serialize_record(record) for record in result])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@dashboard_bp.route('/api/affected-fcst-orders', methods=['GET'])
+def get_affected_fcst_orders():
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            query = "LOAD CSV WITH HEADERS FROM 'file:///fcstorder.csv' AS row WITH row, trim(row.Item) AS item, trim(row.Loc) AS loc, toFloat(row.Qty) AS qty, trim(row.Item) + '@' + trim(row.Loc) AS sku_id WHERE item <> '' AND loc <> '' MATCH (s:SKU {sku_id: sku_id}) WHERE s.demand_sku = true AND s.broken_bom = true RETURN s.sku_id AS sku_id, row AS full_record ORDER BY s.sku_id, qty DESC LIMIT 100;"
+            result = session.run(query)
+            return jsonify([serialize_record(record) for record in result])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@dashboard_bp.route('/api/affected-cust-orders-by-sku', methods=['POST'])
+def get_affected_cust_orders_by_sku():
+    try:
+        data = request.json
+        sku_id = data.get('sku_id')
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            query = "LOAD CSV WITH HEADERS FROM 'file:///custorder.csv' AS row WITH row WHERE (trim(row.Item) + '@' + trim(row.Loc)) = $sku_id RETURN $sku_id AS sku_id, row AS full_record ORDER BY toFloat(row.Qty) DESC"
+            result = session.run(query, sku_id=sku_id)
+            return jsonify([serialize_record(record) for record in result])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@dashboard_bp.route('/api/affected-fcst-orders-by-sku', methods=['POST'])
+def get_affected_fcst_orders_by_sku():
+    try:
+        data = request.json
+        sku_id = data.get('sku_id')
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            query = "LOAD CSV WITH HEADERS FROM 'file:///fcstorder.csv' AS row WITH row WHERE (trim(row.Item) + '@' + trim(row.Loc)) = $sku_id RETURN $sku_id AS sku_id, row AS full_record ORDER BY toFloat(row.Qty) DESC"
+            result = session.run(query, sku_id=sku_id)
+            return jsonify([serialize_record(record) for record in result])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+--- END OF FILE: ../routes/dashboard.py ---
+
+
+--- START OF FILE: ../routes/news.py ---
+# routes/news.py
+from flask import Blueprint, jsonify, request
+import os
+import requests
+import json
+import google.generativeai as genai
+
+news_bp = Blueprint('news_bp', __name__)
+
+NEWS_API_KEY = os.getenv("NEWS_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+NEWS_ANALYSIS_CACHE = {}
+
+def fetch_news_for_category(query, api_key):
+    if not api_key:
+        print(f"WARNING: NEWS_API_KEY not found. Returning empty list for query: '{query}'")
+        return []
+
+    base_url = "https://newsapi.org/v2/everything"
+    params = { 'q': f"(semiconductor OR chip) AND ({query})", 'sortBy': 'relevancy', 'language': 'en', 'pageSize': 5, 'apiKey': api_key }
+    try:
+        response = requests.get(base_url, params=params)
+        response.raise_for_status()
+        articles = response.json().get("articles", [])
+        return [
+            {
+                "title": article.get("title"), "description": article.get("description"),
+                "url": article.get("url"), "source": article.get("source", {}).get("name"), 
+                "imageUrl": article.get("urlToImage")
+            }
+            for article in articles if article.get("title") and article.get("url")
+        ]
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching live news for query '{query}': {e}. Returning empty list.")
+        return []
+
+@news_bp.route('/api/supply-chain-news', methods=['GET'])
+def get_supply_chain_news():
+    categories = {
+        "supplier": "supplier OR factory OR manufacturing", "logistics": "logistics OR shipping OR port OR freight",
+        "market": "demand OR market OR sales", "geopolitical": "geopolitical OR tariff OR trade OR government",
+        "compliance": "compliance OR regulation OR environment"
+    }
+    news_results = {key: fetch_news_for_category(query, NEWS_API_KEY) for key, query in categories.items()}
+    return jsonify(news_results)
+
+@news_bp.route('/api/analyze-article', methods=['POST'])
+def analyze_article():
+    data = request.json
+    article = data.get('article', {})
+    
+    title = article.get('title')
+    text_to_analyze = article.get('description') or title
+    
+    default_impacts = {
+        "Supply Availability": "Neutral", "Raw Material Cost": "Neutral",
+        "Logistics & Freight Cost": "Neutral", "Market Demand": "Neutral", "OTIF": "Neutral"
+    }
+
+    if not text_to_analyze: return jsonify(default_impacts)
+    
+    cache_key = title 
+    if not GEMINI_API_KEY:
+        print("WARNING: GEMINI_API_KEY not found. Skipping AI analysis.")
+        return jsonify(default_impacts)
+    if cache_key in NEWS_ANALYSIS_CACHE:
+        return jsonify(NEWS_ANALYSIS_CACHE[cache_key])
+
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    prompt = f"""You are a supply chain risk analyst for Intel, a major US semiconductor manufacturer. Your task is to read a news summary and determine its likely impact (Positive, Negative, or Neutral) on five specific supply chain KPIs. Respond only with a JSON object.
+The KPIs are:
+1. Supply Availability: Ability to get raw materials from suppliers to US factories. Negative for disruptions, Positive for new sources.
+2. Raw Material Cost: Cost of components. Negative for tariffs/inflation, Positive for subsidies/discounts.
+3. Logistics & Freight Cost: Cost to ship materials internationally. Negative for port congestion, Positive for new shipping lanes.
+4. Market Demand: Customer demand for finished goods. Positive for strong sales, Negative for recession fears.
+5. OTIF (On-Time In-Full): Ability to deliver finished chips on time. Negative impact on Supply or Logistics often causes a Negative impact here.
+News Summary: "{text_to_analyze}"
+Your Response (JSON only):"""
+    
+    try:
+        response = model.generate_content(prompt)
+        cleaned_text = response.text.strip().replace("```json", "").replace("```", "").strip()
+        parsed_response = json.loads(cleaned_text)
+
+        final_impacts = default_impacts.copy()
+        if isinstance(parsed_response, dict):
+            final_impacts.update(parsed_response)
+
+        NEWS_ANALYSIS_CACHE[cache_key] = final_impacts
+        return jsonify(final_impacts)
+    except Exception as e:
+        print(f"Error analyzing content with AI: '{text_to_analyze[:50]}...': {e}. Returning neutral impacts.")
+        NEWS_ANALYSIS_CACHE[cache_key] = default_impacts
+        return jsonify(default_impacts)
+
+--- END OF FILE: ../routes/news.py ---
+
+
+--- START OF FILE: ../utils/llm_tools.py ---
+from .neo4j_handler import get_db, serialize_path
+import os
+
+def get_order_summary_for_multiple_skus(sku_ids: list[str]) -> str:
+    """
+    Calculates an order summary for a GIVEN LIST of SKU IDs. Use this for follow-up questions when multiple SKUs are discussed.
+    """
+    try:
+        if not isinstance(sku_ids, list) or not sku_ids:
+            return "Error: A list of SKU IDs must be provided."
+        
+        processed_sku_ids = []
+        for item in sku_ids:
+            processed_sku_ids.extend(item.splitlines())
+        
+        cleaned_sku_ids = [s.strip(" *-•\t") for s in processed_sku_ids if s.strip()]
+        
+        if not cleaned_sku_ids:
+            return "Error: The provided list of SKUs was empty or invalid."
+
+        driver = get_db()
+        
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            query = """
+            UNWIND $sku_ids AS skuId
+            MATCH (s:SKU {sku_id: skuId})
+            RETURN s.sku_id AS sku, s.cust_demand_qty AS cust_qty, s.fcst_demand_qty AS fcst_qty
+            """
+            result = session.run(query, sku_ids=cleaned_sku_ids)
+            records = [dict(record) for record in result]
+
+        if not records:
+            return "No order data found for the provided SKUs in the graph."
+
+        # Build Markdown Table String
+        header = "| SKU ID | Total Demand | Customer Orders | Forecast Orders |\n"
+        separator = "| :--- | :--- | :--- | :--- |\n"
+        rows = []
+        for record in records:
+            cust_qty = record.get("cust_qty") or 0
+            fcst_qty = record.get("fcst_qty") or 0
+            total_qty = cust_qty + fcst_qty
+            row_string = f"| `{record['sku']}` | **{int(total_qty)}** | {int(cust_qty)} | {int(fcst_qty)} |"
+            rows.append(row_string)
+        
+        return header + separator + "\n".join(rows)
+
+    except Exception as e:
+        print(f"ERROR in get_order_summary_for_multiple_skus: {e}")
+        return f"A database error occurred while fetching order summaries. Please check server logs. Error: {e}"
+
+def get_order_summary_for_single_sku(sku_id: str) -> str:
+    """
+    Calculates an order summary for a SINGLE SKU ID. Use this when the user provides one specific SKU.
+    """
+    return get_order_summary_for_multiple_skus([sku_id])
+
+def get_bottleneck_skus_from_db() -> str:
+    """Returns a list of bottleneck SKUs from the Neo4j database."""
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            result = session.run("MATCH (s:SKU {bottleneck: true}) RETURN s.sku_id AS sku_id LIMIT 10")
+            sku_list = [record['sku_id'] for record in result]
+            return "Here are the top **bottleneck SKUs**:\n\n* `" + "`\n* `".join(sku_list) + "`" if sku_list else "No bottleneck SKUs were found."
+    except Exception as e:
+        print(f"ERROR in get_bottleneck_skus_from_db: {e}")
+        return f"A database error occurred: {e}"
+
+def get_broken_networks_from_db() -> str:
+    """Returns a list of SKUs with broken networks from the Neo4j database."""
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            result = session.run("MATCH (s:SKU {broken_bom: true}) RETURN s.sku_id AS sku_id LIMIT 10")
+            sku_list = [record['sku_id'] for record in result]
+            return "Here are the top SKUs with **broken networks**:\n\n* `" + "`\n* `".join(sku_list) + "`" if sku_list else "No broken networks were found."
+    except Exception as e:
+        print(f"ERROR in get_broken_networks_from_db: {e}")
+        return f"A database error occurred: {e}"
+
+def get_bottleneck_resources_from_db() -> str:
+    """Returns a list of bottlenecked resources from the Neo4j database."""
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            result = session.run("MATCH (r:Res {bottleneck: true}) RETURN r.res_id AS res_id LIMIT 10")
+            res_list = [record['res_id'] for record in result]
+            return "Here are the top **bottleneck resources**:\n\n* `" + "`\n* `".join(res_list) + "`" if res_list else "No bottleneck resources were found."
+    except Exception as e:
+        print(f"ERROR in get_bottleneck_resources_from_db: {e}")
+        return f"A database error occurred: {e}"
+
+def get_network_for_sku(sku_id: str) -> list:
+    """Gets the full network graph data for a specific SKU ID."""
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            cypher_query = "MATCH (s:SKU {sku_id: $sku_id}) CALL(s) { WITH s OPTIONAL MATCH up = (u)-[:SOURCING|PRODUCES|CONSUMED_BY|PURCH_FROM*0..]->(s) RETURN collect(DISTINCT up) AS ups } CALL(s) { WITH s OPTIONAL MATCH down = (s)-[:SOURCING|PRODUCES|CONSUMED_BY|PURCH_FROM*0..]->(d) RETURN collect(DISTINCT down) AS downs } WITH s, [p IN ups WHERE p IS NOT NULL] + [p IN downs WHERE p IS NOT NULL] AS netPaths UNWIND netPaths AS p UNWIND nodes(p) AS n WITH s, collect(DISTINCT p) AS allPaths, collect(DISTINCT n) AS nodesInNet WITH allPaths, [n IN nodesInNet WHERE n:BOM] AS bomNodes UNWIND bomNodes AS bn OPTIONAL MATCH rp = (res:Res)-[:USES_RESOURCE]->(bn) WITH allPaths, collect(DISTINCT rp) AS resPaths WITH [p IN resPaths WHERE p IS NOT NULL] AS resPathsClean, allPaths WITH allPaths + resPathsClean AS combinedPaths UNWIND combinedPaths AS path RETURN path;"
+            result = session.run(cypher_query, sku_id=sku_id)
+            return [serialize_path(row['path']) for row in result]
+    except Exception as e:
+        return [{'error': str(e)}]
+
+def get_affected_orders_summary() -> str:
+    """Returns a summary of the total count and quantity of affected customer and forecast orders."""
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            cust_order_query = "LOAD CSV WITH HEADERS FROM 'file:///custorder.csv' AS row WITH row, toFloat(row.Qty) AS qty WHERE trim(row.Item) <> '' AND trim(row.Loc) <> '' MATCH (s:SKU {sku_id: trim(row.Item) + '@' + trim(row.Loc)}) WHERE s.demand_sku = true AND s.broken_bom = true RETURN count(row) AS orderCount, sum(qty) AS totalQty"
+            cust_result = session.run(cust_order_query).single()
+            cust_orders_count = cust_result.get('orderCount', 0) or 0
+            cust_orders_qty = cust_result.get('totalQty', 0) or 0
+
+            fcst_order_query = "LOAD CSV WITH HEADERS FROM 'file:///fcstorder.csv' AS row WITH row, toFloat(row.Qty) AS qty WHERE trim(row.Item) <> '' AND trim(row.Loc) <> '' MATCH (s:SKU {sku_id: trim(row.Item) + '@' + trim(row.Loc)}) WHERE s.demand_sku = true AND s.broken_bom = true RETURN count(row) AS orderCount, sum(qty) AS totalQty"
+            fcst_result = session.run(fcst_order_query).single()
+            fcst_orders_count = fcst_result.get('orderCount', 0) or 0
+            fcst_orders_qty = fcst_result.get('totalQty', 0) or 0
+
+            total_count = cust_orders_count + fcst_orders_count
+            total_qty = cust_orders_qty + fcst_orders_qty
+
+            return f"**Affected Orders Summary**:\n* Customer Orders: {cust_orders_count} orders (Total Qty: {int(cust_orders_qty)})\n* Forecast Orders: {fcst_orders_count} orders (Total Qty: {int(fcst_orders_qty)})\n* Grand Total: {total_count} orders (Total Qty: {int(total_qty)})"
+    except Exception as e:
+        print(f"ERROR in get_affected_orders_summary: {e}")
+        return f"A database error occurred: {e}"
+
+def get_affected_customer_orders() -> str:
+    """Returns a detailed list of the top 20 affected customer orders from the database."""
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            query = "LOAD CSV WITH HEADERS FROM 'file:///custorder.csv' AS row WITH row, trim(row.Item) AS item, trim(row.Loc) AS loc, toFloat(row.Qty) AS qty, trim(row.Item) + '@' + trim(row.Loc) AS sku_id WHERE item <> '' AND loc <> '' MATCH (s:SKU {sku_id: sku_id}) WHERE s.demand_sku = true AND s.broken_bom = true RETURN row.Item as Item, row.Loc as Loc, row.Qty as Qty, row.OrderID as OrderID ORDER BY Qty DESC LIMIT 20"
+            result = session.run(query)
+            records = list(result)
+            if not records: return "No affected customer orders were found."
+            header = "| OrderID | Item | Loc | Qty |\n"
+            separator = "| :--- | :--- | :--- | :--- |\n"
+            rows = [f"| {r['OrderID']} | {r['Item']} | {r['Loc']} | {r['Qty']} |" for r in records]
+            return "**Top Affected Customer Orders**:\n" + header + separator + "\n".join(rows)
+    except Exception as e:
+        print(f"ERROR in get_affected_customer_orders: {e}")
+        return f"A database error occurred: {e}"
+
+def get_affected_forecast_orders() -> str:
+    """Returns a detailed list of the top 20 affected forecast orders from the database."""
+    try:
+        driver = get_db()
+        with driver.session(database=os.getenv("NEO4J_DATABASE")) as session:
+            query = "LOAD CSV WITH HEADERS FROM 'file:///fcstorder.csv' AS row WITH row, trim(row.Item) AS item, trim(row.Loc) AS loc, toFloat(row.Qty) AS qty, trim(row.Item) + '@' + trim(row.Loc) AS sku_id WHERE item <> '' AND loc <> '' MATCH (s:SKU {sku_id: sku_id}) WHERE s.demand_sku = true AND s.broken_bom = true RETURN row.Item as Item, row.Loc as Loc, row.Qty as Qty, row.Date as Date ORDER BY Qty DESC LIMIT 20"
+            result = session.run(query)
+            records = list(result)
+            if not records: return "No affected forecast orders were found."
+            header = "| Date | Item | Loc | Qty |\n"
+            separator = "| :--- | :--- | :--- | :--- |\n"
+            rows = [f"| {r['Date']} | {r['Item']} | {r['Loc']} | {r['Qty']} |" for r in records]
+            return "**Top Affected Forecast Orders**:\n" + header + separator + "\n".join(rows)
+    except Exception as e:
+        print(f"ERROR in get_affected_forecast_orders: {e}")
+        return f"A database error occurred: {e}"
+
+available_tools = {
+    "get_order_summary_for_single_sku": get_order_summary_for_single_sku,
+    "get_order_summary_for_multiple_skus": get_order_summary_for_multiple_skus,
+    "get_bottleneck_skus_from_db": get_bottleneck_skus_from_db, 
+    "get_broken_networks_from_db": get_broken_networks_from_db, 
+    "get_bottleneck_resources_from_db": get_bottleneck_resources_from_db, 
+    "get_network_for_sku": get_network_for_sku,
+    "get_affected_orders_summary": get_affected_orders_summary,
+    "get_affected_customer_orders": get_affected_customer_orders,
+    "get_affected_forecast_orders": get_affected_forecast_orders
+}
+
+--- END OF FILE: ../utils/llm_tools.py ---
+
+
+--- START OF FILE: ../utils/neo4j_handler.py ---
+# utils/neo4j_handler.py
+from neo4j import GraphDatabase
+import os
+
+# Neo4j connection details are loaded from environment variables
+NEO4J_URI = os.getenv("NEO4J_URI")
+NEO4J_USER = os.getenv("NEO4J_USER")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
+NEO4J_DATABASE = os.getenv("NEO4J_DATABASE")
+
+def get_db():
+    driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
+    return driver
+
+def serialize_path(path):
+    def serialize_node(node):
+        return {'id': node.element_id, 'labels': list(node.labels), 'properties': dict(node)}
+    def serialize_rel(rel):
+        return {'id': rel.element_id, 'type': rel.type, 'properties': dict(rel), 'startNode': rel.start_node.element_id, 'endNode': rel.end_node.element_id}
+    nodes = [serialize_node(node) for node in path.nodes]
+    relationships = [serialize_rel(rel) for rel in path.relationships]
+    return {'nodes': nodes, 'relationships': relationships}
+
+def serialize_record(record):
+    return {
+        'sku_id': record['sku_id'],
+        'properties': {'full_record': dict(record['full_record'])}
+    }
+
+--- END OF FILE: ../utils/neo4j_handler.py ---
+
+
